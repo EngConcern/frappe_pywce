@@ -41,6 +41,9 @@ export interface TemplateSettings {
   isReport?: boolean;
   trigger?: string;
   react?: string;
+  message_level?: string;
+  next_level?: string;
+  delay_time?: string;
 }
 
 export interface InteractiveMessage {

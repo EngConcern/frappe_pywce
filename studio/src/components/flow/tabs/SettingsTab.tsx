@@ -140,6 +140,54 @@ export const SettingsTab = ({ template, onUpdate }: SettingsTabProps) => {
         </div>
 
         <div>
+          <Label>Message Level</Label>
+          <Input
+            value={settings.message_level || ''}
+            onChange={(e) => updateSetting('message_level', e.target.value)}
+            placeholder="Message level it should respond to"
+            className="font-mono text-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Message level it should respond to
+          </p>
+        </div>
+
+        <div>
+          <Label>Next Level</Label>
+          <Input
+            value={settings.next_level || ''}
+            onChange={(e) => updateSetting('next_level', e.target.value)}
+            placeholder="Level to move to after this message"
+            className="font-mono text-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Level to move to after this message
+          </p>
+        </div>
+
+
+        <div>
+        <Label>Delay Time (seconds)</Label>
+
+        <select
+          value={settings.delay_time ?? ''}
+          onChange={(e) => updateSetting('delay_time', Number(e.target.value))}
+          className="w-full border rounded px-3 py-2 text-sm font-mono"
+        >
+          <option value="">Select delay</option>
+          {[2, 5, 10, 15, 20, 25, 30, 45, 60].map((sec) => (
+            <option key={sec} value={sec}>
+              {sec} seconds
+            </option>
+          ))}
+        </select>
+
+        <p className="text-xs text-muted-foreground mt-1">
+          Time to wait before responding to the message
+        </p>
+      </div>
+
+        <div>
           <Label>Property to Save</Label>
           <Input
             value={settings.prop || ''}
