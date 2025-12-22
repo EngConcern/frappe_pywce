@@ -107,7 +107,7 @@ def send_message(phone_number, message_text, message_type="text"):
             "message_type": message_type,
             "message_text": message_text,
             "contact_name": contact_name,
-            "status": "sent\"
+            "status": "sent"
         })
         message_doc.insert(ignore_permissions=True)
         frappe.db.commit()
