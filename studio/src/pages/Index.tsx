@@ -115,6 +115,7 @@ useEffect(() => {
 
       let flow: ChatbotFlow | null = null;
       let selectedBotName = "";
+      console.log("Flow Template Name: ", flowParam);
 
       // Check if the parsed data has a 'chatbots' array (new structure)
       if (flowData.chatbots && Array.isArray(flowData.chatbots)) {
@@ -667,7 +668,12 @@ useEffect(() => {
     version: "1.0",
   };
 
-  // If we have existing data with chatbots array, we need to update the specific chatbot
+  let multiChatbotData: any = {
+    chatbots: [],
+    version: "1.0",
+  };
+
+  // If we have existing data, parse and convert if needed
   if (data?.flow_json) {
     let flowData: any;
     try {
@@ -676,55 +682,91 @@ useEffect(() => {
           ? JSON.parse(data.flow_json)
           : data.flow_json;
     } catch (err) {
-      // If parsing fails, return the current flow as-is
-      return JSON.stringify(currentFlow, null, 2);
+      // If parsing fails, create new multi-chatbot structure with current flow
+      const botName = flowParam || data?.chatbot_name || "Default Bot";
+      multiChatbotData.chatbots.push({
+        name: botName,
+        templates: currentFlow.templates,
+      });
+      return JSON.stringify(multiChatbotData, null, 2);
     }
 
-    // Check if it's a multi-chatbot structure
+    // Check if it's already a multi-chatbot structure
     if (flowData.chatbots && Array.isArray(flowData.chatbots)) {
-      if (flowParam) {
-        // Find and update the specific chatbot
-        const botIndex = flowData.chatbots.findIndex(
-          (bot: any) => bot.name.toLowerCase() === flowParam.toLowerCase()
-        );
+      // Already in multi-chatbot format, use it
+      multiChatbotData = flowData;
+    } else if (flowData.templates && Array.isArray(flowData.templates)) {
+      // Old single-flow format - convert to multi-chatbot format
+      const existingBotName = data?.chatbot_name || "Default Bot";
+      multiChatbotData.chatbots.push({
+        name: existingBotName,
+        templates: flowData.templates,
+      });
+      multiChatbotData.version = flowData.version || "1.0";
+    } else {
+      // Unknown format, create new structure
+      const botName = flowParam || data?.chatbot_name || "Default Bot";
+      multiChatbotData.chatbots.push({
+        name: botName,
+        templates: currentFlow.templates,
+      });
+      return JSON.stringify(multiChatbotData, null, 2);
+    }
+  } else {
+    // No existing data, create new multi-chatbot structure
+    const botName = flowParam || data?.chatbot_name || "Default Bot";
+    multiChatbotData.chatbots.push({
+      name: botName,
+      templates: currentFlow.templates,
+    });
+    return JSON.stringify(multiChatbotData, null, 2);
+  }
 
-        if (botIndex !== -1) {
-          // Update the specific chatbot's templates
-          flowData.chatbots[botIndex].templates = currentFlow.templates;
-          return JSON.stringify(flowData, null, 2);
-        } else {
-          // Chatbot not found, add it as a new one
-          flowData.chatbots.push({
-            name: flowParam,
-            templates: currentFlow.templates,
-          });
-          return JSON.stringify(flowData, null, 2);
-        }
-      } else {
-        // No flow parameter, update the first chatbot
-        if (flowData.chatbots.length > 0) {
-          flowData.chatbots[0].templates = currentFlow.templates;
-          return JSON.stringify(flowData, null, 2);
-        }
-      }
+  // Now update or add the specific chatbot based on flow parameter
+  if (flowParam) {
+    // Find and update the specific chatbot by name
+    const botIndex = multiChatbotData.chatbots.findIndex(
+      (bot: any) => bot.name.toLowerCase() === flowParam.toLowerCase()
+    );
+
+    if (botIndex !== -1) {
+      // Update the specific chatbot's templates
+      multiChatbotData.chatbots[botIndex].templates = currentFlow.templates;
+    } else {
+      // Chatbot not found, add it as a new one
+      multiChatbotData.chatbots.push({
+        name: flowParam,
+        templates: currentFlow.templates,
+      });
+    }
+  } else {
+    // No flow parameter - update the first chatbot or create a default one
+    if (multiChatbotData.chatbots.length > 0) {
+      multiChatbotData.chatbots[0].templates = currentFlow.templates;
+    } else {
+      const botName = data?.chatbot_name || "Default Bot";
+      multiChatbotData.chatbots.push({
+        name: botName,
+        templates: currentFlow.templates,
+      });
     }
   }
 
-    // If no existing multi-chatbot structure or old format, return current flow
-    return JSON.stringify(currentFlow, null, 2);
-  };
+  return JSON.stringify(multiChatbotData, null, 2);
+};
 
-
-  const saveCurrentFlowJson = () => {
+const saveCurrentFlowJson = () => {
   setIsSaving(true);
   const flowJson = getCurrentFlowJson();
 
-  console.log("Saving flow JSON: ", flowJson);
+  console.log("Saving flow JSON==>: ", flowJson);
 
   // Get the 'flow' parameter from URL for the success message
   const urlParams = new URLSearchParams(window.location.search);
   const flowParam = urlParams.get("flow");
-  const flowName = flowParam || data?.chatbot_name || "untitled";
+  const flowName = flowParam || data?.chatbot_name || "Default Bot";
+
+  console.log("Saving flow JSON>==: ", flowJson);
 
   updateDoc(chatbotConfigDocName, chatbotConfigDocName, {
     flow_json: flowJson,
@@ -739,9 +781,8 @@ useEffect(() => {
     })
     .finally(() => {
       setIsSaving(false);
-      });
-  };
-
+    });
+};
 
 
   /*
