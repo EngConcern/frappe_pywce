@@ -98,6 +98,54 @@ class FrappeStorageManager(storage.IStorageManager):
             logger.error(f"Invalid flow_json format. Keys found: {flow_data.keys() if isinstance(flow_data, dict) else 'not a dict'}")
             raise Exception("Invalid flow_json format: missing 'chatbots' or 'templates' key")
     
+    def _validate_and_fix_template(self, template_name: str, template_data: dict) -> dict:
+        """
+        Validate and fix common template issues before they cause errors.
+        
+        Args:
+            template_name: Name of the template
+            template_data: The template dictionary
+            
+        Returns:
+            Fixed template dictionary
+        """
+        template_type = template_data.get('type', 'unknown')
+        
+        # Fix button templates missing 'buttons' field
+        if template_type == 'button':
+            message = template_data.get('message', {})
+            if 'buttons' not in message or not message.get('buttons'):
+                logger.warning(f"Template '{template_name}' is type 'button' but has no buttons!")
+                
+                # Option 1: Convert to text template
+                if not message.get('buttons'):
+                    logger.info(f"Converting '{template_name}' from 'button' to 'text' template")
+                    template_data['type'] = 'text'
+                # Option 2: Add empty buttons array
+                else:
+                    logger.info(f"Adding empty buttons array to '{template_name}'")
+                    message['buttons'] = []
+                    template_data['message'] = message
+        
+        # Fix list templates missing 'sections' field
+        elif template_type == 'list':
+            message = template_data.get('message', {})
+            if 'sections' not in message:
+                logger.warning(f"Template '{template_name}' is type 'list' but has no sections!")
+                message['sections'] = []
+                template_data['message'] = message
+        
+        # Fix CTA templates missing 'url' field
+        elif template_type == 'cta':
+            message = template_data.get('message', {})
+            if 'url' not in message:
+                logger.warning(f"Template '{template_name}' is type 'cta' but has no url!")
+                message['url'] = ''
+                template_data['message'] = message
+        
+        return template_data
+
+
     def _load_templates_from_db(self):
         """Load templates from database and translate them."""
         try:
@@ -123,21 +171,59 @@ class FrappeStorageManager(storage.IStorageManager):
                 self._TRIGGERS = []
                 return
             
-            # CRITICAL FIX: VisualTranslator.translate() expects a JSON STRING, not a dict!
+            # Convert to JSON string for translator
             ui_translator = VisualTranslator()
-            
-            logger.info("Converting extracted_flow to JSON string for translator...")
             extracted_flow_json = json.dumps(extracted_flow)
             
-            # Now call translate with the JSON string
-            self._TEMPLATES, self._TRIGGERS = ui_translator.translate(extracted_flow_json)
+            # Translate templates
+            raw_templates, self._TRIGGERS = ui_translator.translate(extracted_flow_json)
             
             self.START_MENU = ui_translator.START_MENU
             self.REPORT_MENU = ui_translator.REPORT_MENU
             
-            logger.info(f"Translation complete: {len(self._TEMPLATES)} templates, {len(self._TRIGGERS)} triggers")
-            logger.info(f"Template IDs after translation: {list(self._TEMPLATES.keys())}")
+            logger.info(f"Translation complete: {len(raw_templates)} templates, {len(self._TRIGGERS)} triggers")
+            
+            # Validate and fix templates before storing
+            self._TEMPLATES = {}
+            validation_errors = []
+            
+            for template_name, template_data in raw_templates.items():
+                try:
+                    # Validate and fix common issues
+                    fixed_template = self._validate_and_fix_template(template_name, template_data)
+                    
+                    # Try to validate with pydantic
+                    validated = template.Template.as_model(fixed_template)
+                    
+                    # Store validated template
+                    self._TEMPLATES[template_name] = fixed_template
+                    
+                except Exception as e:
+                    logger.error(f"Validation failed for template '{template_name}': {e}")
+                    logger.error(f"Template data: {json.dumps(template_data, indent=2)}")
+                    validation_errors.append({
+                        'name': template_name,
+                        'error': str(e),
+                        'data': template_data
+                    })
+                    
+                    # Don't store invalid templates
+                    continue
+            
+            logger.info(f"Validation complete: {len(self._TEMPLATES)} valid templates")
+            logger.info(f"Template IDs after validation: {list(self._TEMPLATES.keys())}")
             logger.info(f"START_MENU: {self.START_MENU}, REPORT_MENU: {self.REPORT_MENU}")
+            
+            if validation_errors:
+                logger.warning(f"{len(validation_errors)} templates failed validation:")
+                for error in validation_errors:
+                    logger.warning(f"  - {error['name']}: {error['error']}")
+                
+                # Log to Frappe error log for visibility
+                frappe.log_error(
+                    title="Template Validation Errors",
+                    message=json.dumps(validation_errors, indent=2)
+                )
 
         except Exception as e:
             frappe.log_error(title="FrappeStorageManager Load Error", message=str(e))
@@ -145,6 +231,48 @@ class FrappeStorageManager(storage.IStorageManager):
             self._TEMPLATES = {}
             self._TRIGGERS = []
 
+
+    def get(self, name: str) -> template.EngineTemplate:    
+        """Get a template by name with enhanced error handling."""
+        try:
+            self._ensure_templates_loaded()
+            
+            logger.info(f"Attempting to fetch template: '{name}'")
+            
+            if not self._TEMPLATES:
+                logger.error("No templates loaded! _TEMPLATES is empty")
+                return None
+            
+            if name is None or name == "None":
+                logger.error(f"Template name is None or 'None' string - routing issue detected")
+                return None
+            
+            template_data = self._TEMPLATES.get(name)
+            
+            if template_data is None:
+                logger.error(f"Template '{name}' not found in _TEMPLATES")
+                logger.error(f"Available template IDs: {list(self._TEMPLATES.keys())}")
+                return None
+            
+            # Validate before returning
+            try:
+                return template.Template.as_model(template_data)
+            except Exception as validation_error:
+                logger.critical(f"Template '{name}' failed runtime validation: {validation_error}")
+                logger.critical(f"Template data: {json.dumps(template_data, indent=2)}")
+                
+                # Try to fix and re-validate
+                fixed_template = self._validate_and_fix_template(name, template_data)
+                try:
+                    return template.Template.as_model(fixed_template)
+                except Exception as second_error:
+                    logger.critical(f"Template '{name}' still invalid after fix attempt: {second_error}")
+                    return None
+                
+        except Exception as e:
+            frappe.log_error(title="Get Template Error", message=f"Template: {name}, Error: {str(e)}")
+            logger.critical(f"Error fetching template '{name}': {str(e)}", exc_info=True)
+            return None
 
     def _ensure_templates_loaded(self):
         """
