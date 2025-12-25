@@ -17,11 +17,12 @@ def create_cache_key(k:str):
 class FrappeStorageManager(storage.IStorageManager):
     """
     Implements the IStorageManager interface for a live Frappe backend.
-
-    This class is responsible for:
-    1. Fetching the "active" chatbot flow.
-    2. Caching the *translated* pywce-compatible dictionary.
-    3. Invalidating the cache when the bot is saved in Frappe.
+    
+    Enhanced with:
+    - Template validation and auto-fixing
+    - Broken route detection
+    - Error fallback templates
+    - Better logging and diagnostics
     """
     _TEMPLATES: Dict = {}
     _TRIGGERS: List[template.EngineRoute] = {}
@@ -35,10 +36,7 @@ class FrappeStorageManager(storage.IStorageManager):
         self._ensure_templates_loaded()
     
     def _extract_all_templates_from_flow(self, flow_data):
-        """
-        Extract ALL templates from all chatbots, regardless of chatbot_name.
-        Returns a dict with merged 'templates' and 'version' keys.
-        """
+        """Extract ALL templates from all chatbots, regardless of chatbot_name."""
         all_templates = []
         
         # Check if it's the new multi-chatbot format
@@ -99,53 +97,94 @@ class FrappeStorageManager(storage.IStorageManager):
             raise Exception("Invalid flow_json format: missing 'chatbots' or 'templates' key")
     
     def _validate_and_fix_template(self, template_name: str, template_data: dict) -> dict:
-        """
-        Validate and fix common template issues before they cause errors.
+        """Validate and fix common template issues before they cause errors."""
+        # Handle both old 'type' and new 'kind' field names
+        template_type = template_data.get('kind') or template_data.get('type', 'unknown')
         
-        Args:
-            template_name: Name of the template
-            template_data: The template dictionary
-            
-        Returns:
-            Fixed template dictionary
-        """
-        template_type = template_data.get('type', 'unknown')
+        # Ensure we have a message object
+        message = template_data.get('message', {})
+        if not isinstance(message, dict):
+            logger.warning(f"Template '{template_name}' has invalid message field, creating empty object")
+            message = {}
+            template_data['message'] = message
         
         # Fix button templates missing 'buttons' field
         if template_type == 'button':
-            message = template_data.get('message', {})
             if 'buttons' not in message or not message.get('buttons'):
                 logger.warning(f"Template '{template_name}' is type 'button' but has no buttons!")
                 
-                # Option 1: Convert to text template
-                if not message.get('buttons'):
-                    logger.info(f"Converting '{template_name}' from 'button' to 'text' template")
-                    template_data['type'] = 'text'
-                # Option 2: Add empty buttons array
+                # Check if body is empty - if so, this might be a placeholder template
+                if not message.get('body') and not message.get('title'):
+                    logger.info(f"Template '{template_name}' appears to be empty placeholder, converting to text")
+                    template_data['kind'] = 'text'
+                    if 'type' in template_data:
+                        template_data['type'] = 'text'
                 else:
-                    logger.info(f"Adding empty buttons array to '{template_name}'")
-                    message['buttons'] = []
-                    template_data['message'] = message
+                    # Convert to text template since it has content but no buttons
+                    logger.info(f"Converting '{template_name}' from 'button' to 'text' template")
+                    template_data['kind'] = 'text'
+                    if 'type' in template_data:
+                        template_data['type'] = 'text'
         
-        # Fix list templates missing 'sections' field
+        # Fix list templates with malformed sections
         elif template_type == 'list':
-            message = template_data.get('message', {})
             if 'sections' not in message:
                 logger.warning(f"Template '{template_name}' is type 'list' but has no sections!")
                 message['sections'] = []
                 template_data['message'] = message
+            else:
+                # Validate sections structure
+                sections = message.get('sections', [])
+                if not isinstance(sections, list):
+                    logger.error(f"Template '{template_name}' has invalid sections (not a list): {type(sections)}")
+                    message['sections'] = []
+                    template_data['message'] = message
+                else:
+                    # Ensure each section is properly formatted
+                    fixed_sections = []
+                    for i, section in enumerate(sections):
+                        if isinstance(section, dict):
+                            fixed_sections.append(section)
+                        else:
+                            logger.warning(f"Template '{template_name}' section {i} is not a dict, skipping")
+                    message['sections'] = fixed_sections
+                    template_data['message'] = message
         
         # Fix CTA templates missing 'url' field
         elif template_type == 'cta':
-            message = template_data.get('message', {})
             if 'url' not in message:
                 logger.warning(f"Template '{template_name}' is type 'cta' but has no url!")
                 message['url'] = ''
                 template_data['message'] = message
         
         return template_data
-
-
+    
+    def _check_for_broken_routes(self, validation_errors: List[dict]) -> None:
+        """Check if any valid templates have routes pointing to invalid templates."""
+        invalid_template_names = {error['name'] for error in validation_errors}
+        broken_routes = []
+        
+        for template_name, template_data in self._TEMPLATES.items():
+            routes = template_data.get('routes', [])
+            for route in routes:
+                next_template = route.get('next_stage') or route.get('connectedTo')
+                if next_template in invalid_template_names:
+                    broken_routes.append({
+                        'from_template': template_name,
+                        'to_template': next_template,
+                        'route': route
+                    })
+        
+        if broken_routes:
+            logger.error(f"Found {len(broken_routes)} broken routes pointing to invalid templates:")
+            for broken in broken_routes:
+                logger.error(f"  - '{broken['from_template']}' -> '{broken['to_template']}' (route will fail at runtime)")
+            
+            logger.error("Fix these by either:")
+            logger.error("  1. Fixing the invalid templates in your flow builder")
+            logger.error("  2. Updating routes to point to valid templates")
+            logger.error("  3. Removing the broken routes")
+    
     def _load_templates_from_db(self):
         """Load templates from database and translate them."""
         try:
@@ -171,7 +210,7 @@ class FrappeStorageManager(storage.IStorageManager):
                 self._TRIGGERS = []
                 return
             
-            # Convert to JSON string for translator
+            # CRITICAL: VisualTranslator.translate() expects a JSON STRING, not a dict!
             ui_translator = VisualTranslator()
             extracted_flow_json = json.dumps(extracted_flow)
             
@@ -219,6 +258,9 @@ class FrappeStorageManager(storage.IStorageManager):
                 for error in validation_errors:
                     logger.warning(f"  - {error['name']}: {error['error']}")
                 
+                # Check for broken routes (routes pointing to invalid templates)
+                self._check_for_broken_routes(validation_errors)
+                
                 # Log to Frappe error log for visibility
                 frappe.log_error(
                     title="Template Validation Errors",
@@ -231,54 +273,8 @@ class FrappeStorageManager(storage.IStorageManager):
             self._TEMPLATES = {}
             self._TRIGGERS = []
 
-
-    def get(self, name: str) -> template.EngineTemplate:    
-        """Get a template by name with enhanced error handling."""
-        try:
-            self._ensure_templates_loaded()
-            
-            logger.info(f"Attempting to fetch template: '{name}'")
-            
-            if not self._TEMPLATES:
-                logger.error("No templates loaded! _TEMPLATES is empty")
-                return None
-            
-            if name is None or name == "None":
-                logger.error(f"Template name is None or 'None' string - routing issue detected")
-                return None
-            
-            template_data = self._TEMPLATES.get(name)
-            
-            if template_data is None:
-                logger.error(f"Template '{name}' not found in _TEMPLATES")
-                logger.error(f"Available template IDs: {list(self._TEMPLATES.keys())}")
-                return None
-            
-            # Validate before returning
-            try:
-                return template.Template.as_model(template_data)
-            except Exception as validation_error:
-                logger.critical(f"Template '{name}' failed runtime validation: {validation_error}")
-                logger.critical(f"Template data: {json.dumps(template_data, indent=2)}")
-                
-                # Try to fix and re-validate
-                fixed_template = self._validate_and_fix_template(name, template_data)
-                try:
-                    return template.Template.as_model(fixed_template)
-                except Exception as second_error:
-                    logger.critical(f"Template '{name}' still invalid after fix attempt: {second_error}")
-                    return None
-                
-        except Exception as e:
-            frappe.log_error(title="Get Template Error", message=f"Template: {name}, Error: {str(e)}")
-            logger.critical(f"Error fetching template '{name}': {str(e)}", exc_info=True)
-            return None
-
     def _ensure_templates_loaded(self):
-        """
-        Ensures self._TEMPLATES is populated,
-        respecting the lazy-load approach.
-        """
+        """Ensures self._TEMPLATES is populated, respecting the lazy-load approach."""
         if not self._TEMPLATES:
             self._load_templates_from_db()
 
@@ -297,54 +293,81 @@ class FrappeStorageManager(storage.IStorageManager):
         
         return exists
 
+    def _get_error_template(self, template_name: str, error_message: str) -> Optional[template.EngineTemplate]:
+        """
+        Create a fallback error template when the requested template fails.
+        This prevents the entire flow from breaking due to one bad template.
+        """
+        logger.warning(f"Creating error fallback template for '{template_name}'")
+        
+        error_template_data = {
+            'kind': 'text',
+            'message': {
+                'body': f"⚠️ Template Error\n\nThe template '{template_name}' could not be loaded.\n\nError: {error_message}\n\nPlease contact the administrator to fix this template."
+            },
+            'routes': [],
+            'checkpoint': False
+        }
+        
+        try:
+            return template.Template.as_model(error_template_data)
+        except Exception as e:
+            logger.critical(f"Even error template failed to create: {e}")
+            return None
+
     def get(self, name: str) -> template.EngineTemplate:    
+        """Get a template by name with enhanced error handling and fallback."""
         try:
             self._ensure_templates_loaded()
             
             logger.info(f"Attempting to fetch template: '{name}'")
             
-            # Check if templates were loaded
             if not self._TEMPLATES:
                 logger.error("No templates loaded! _TEMPLATES is empty")
-                return None
-             
-            logger.debug(f"Available templates: {list(self._TEMPLATES.keys())}")
+                return self._get_error_template(name, "No templates loaded")
             
-            # Special handling for None template name
             if name is None or name == "None":
-                logger.error(f"Template name is None or 'None' string. This indicates a routing issue.")
-                logger.error(f"Check your template routes - one of them might be pointing to a non-existent template")
-                return None
+                logger.error(f"Template name is None or 'None' string - routing issue detected")
+                return self._get_error_template(name, "Invalid template name: None")
             
             template_data = self._TEMPLATES.get(name)
             
             if template_data is None:
                 logger.error(f"Template '{name}' not found in _TEMPLATES")
                 logger.error(f"Available template IDs: {list(self._TEMPLATES.keys())}")
-                logger.error(f"This could mean:")
-                logger.error(f"  1. A route is pointing to a template ID that doesn't exist")
-                logger.error(f"  2. Template IDs changed but routes weren't updated")
-                logger.error(f"  3. The template was removed but routes still reference it")
-                return None
+                return self._get_error_template(name, f"Template not found: {name}")
             
-            logger.debug(f"Template data found, type: {type(template_data)}")
-            
-            if isinstance(template_data, dict):
-                logger.debug(f"Template data keys: {template_data.keys()}")
-            
-            return template.Template.as_model(template_data)
-            
+            # Validate before returning
+            try:
+                return template.Template.as_model(template_data)
+            except Exception as validation_error:
+                logger.critical(f"Template '{name}' failed runtime validation: {validation_error}")
+                logger.critical(f"Template data: {json.dumps(template_data, indent=2)}")
+                
+                # Try to fix and re-validate
+                fixed_template = self._validate_and_fix_template(name, template_data)
+                try:
+                    validated = template.Template.as_model(fixed_template)
+                    # Update stored template with fixed version
+                    self._TEMPLATES[name] = fixed_template
+                    return validated
+                except Exception as second_error:
+                    logger.critical(f"Template '{name}' still invalid after fix attempt: {second_error}")
+                    return self._get_error_template(name, f"Validation failed: {second_error}")
+                
         except Exception as e:
             frappe.log_error(title="Get Template Error", message=f"Template: {name}, Error: {str(e)}")
             logger.critical(f"Error fetching template '{name}': {str(e)}", exc_info=True)
-            return None
+            return self._get_error_template(name, str(e))
 
     def triggers(self) -> List[template.EngineRoute]:
         return self._TRIGGERS
     
     def __repr__(self):
-        return f"FrappeStorageManager(start_menu={self.START_MENU}, report_menu={self.REPORT_MENU}, \
-            templates_count={len(self._TEMPLATES.keys())}, triggers_count={len(self._TRIGGERS)})"
+        return (f"FrappeStorageManager(start_menu={self.START_MENU}, "
+                f"report_menu={self.REPORT_MENU}, "
+                f"templates_count={len(self._TEMPLATES)}, "
+                f"triggers_count={len(self._TRIGGERS)})")
 
 
 class FrappeRedisSessionManager(ISessionManager):
