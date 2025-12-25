@@ -27,9 +27,9 @@ frappe.ui.form.on("ChatBot Config", {
     });
 
     // Flow Management buttons
-    frm.add_custom_button(__("Open Studio"), function () {
-      window.open(`/bot/studio`, "_blank");
-    });
+   // frm.add_custom_button(__("Open Studio"), function () {
+   //   window.open(`/bot/studio`, "_blank");
+   // });
 
     frm.add_custom_button(__("Manage Flows"), function () {
       frappe.set_route("List", "Bot Flow");
