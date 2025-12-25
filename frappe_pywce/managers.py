@@ -99,7 +99,7 @@ class FrappeStorageManager(storage.IStorageManager):
             raise Exception("Invalid flow_json format: missing 'chatbots' or 'templates' key")
     
     def _load_templates_from_db(self):
-        """Load templates from database and translate them with detailed interception."""
+        """Load templates from database and translate them."""
         try:
             if not self.flow_json:
                 raise Exception("No flow json found or is empty.")
@@ -123,57 +123,14 @@ class FrappeStorageManager(storage.IStorageManager):
                 self._TRIGGERS = []
                 return
             
-            # INTERCEPT AND DEBUG THE TRANSLATOR
+            # CRITICAL FIX: VisualTranslator.translate() expects a JSON STRING, not a dict!
             ui_translator = VisualTranslator()
             
-            # Monkey-patch the _transform_template method to log what's happening
-            original_transform = ui_translator._transform_template
-            transform_call_count = [0]
+            logger.info("Converting extracted_flow to JSON string for translator...")
+            extracted_flow_json = json.dumps(extracted_flow)
             
-            def logged_transform(template):
-                transform_call_count[0] += 1
-                logger.debug(f"_transform_template called #{transform_call_count[0]} for: {template.get('id')}")
-                try:
-                    result = original_transform(template)
-                    logger.debug(f"  -> Transform result: {result}")
-                    return result
-                except Exception as e:
-                    logger.error(f"  -> Transform FAILED: {e}", exc_info=True)
-                    raise
-            
-            ui_translator._transform_template = logged_transform
-            
-            # Call translate with logging
-            logger.info("Calling VisualTranslator.translate()...")
-            
-            try:
-                result = ui_translator.translate(extracted_flow)
-                logger.info(f"translate() returned without exception")
-                logger.info(f"_transform_template was called {transform_call_count[0]} times")
-                
-                if transform_call_count[0] == 0:
-                    logger.error("CRITICAL: _transform_template was NEVER called!")
-                    logger.error("This means translate() is failing before processing any templates")
-                    logger.error("Possible causes:")
-                    logger.error("  1. translate() validates input and rejects the entire flow")
-                    logger.error("  2. translate() expects different data structure")
-                    logger.error("  3. translate() has internal error that's being silently caught")
-                    
-                    # Try to inspect translate() source
-                    import inspect
-                    try:
-                        source = inspect.getsource(ui_translator.translate)
-                        logger.error(f"translate() source code:\n{source}")
-                    except:
-                        logger.error("Could not retrieve translate() source code")
-                
-                self._TEMPLATES, self._TRIGGERS = result
-                
-            except Exception as e:
-                logger.error(f"translate() raised exception: {e}", exc_info=True)
-                self._TEMPLATES = {}
-                self._TRIGGERS = []
-                return
+            # Now call translate with the JSON string
+            self._TEMPLATES, self._TRIGGERS = ui_translator.translate(extracted_flow_json)
             
             self.START_MENU = ui_translator.START_MENU
             self.REPORT_MENU = ui_translator.REPORT_MENU
@@ -181,26 +138,6 @@ class FrappeStorageManager(storage.IStorageManager):
             logger.info(f"Translation complete: {len(self._TEMPLATES)} templates, {len(self._TRIGGERS)} triggers")
             logger.info(f"Template IDs after translation: {list(self._TEMPLATES.keys())}")
             logger.info(f"START_MENU: {self.START_MENU}, REPORT_MENU: {self.REPORT_MENU}")
-            
-            # Enhanced error reporting if empty
-            if not self._TEMPLATES:
-                logger.error("TEMPLATES is empty after translation!")
-                logger.error(f"Translator attributes: {dir(ui_translator)}")
-                logger.error(f"Translator START_MENU: {ui_translator.START_MENU}")
-                logger.error(f"Translator REPORT_MENU: {ui_translator.REPORT_MENU}")
-                
-                # Check translator internal state
-                for attr in ['_templates', 'templates', '_data', 'data']:
-                    if hasattr(ui_translator, attr):
-                        logger.error(f"Translator.{attr}: {getattr(ui_translator, attr)}")
-                
-                # Log pywce version
-                try:
-                    import pywce
-                    version = pywce.__version__ if hasattr(pywce, '__version__') else 'Unknown'
-                    logger.error(f"pywce version: {version}")
-                except:
-                    pass
 
         except Exception as e:
             frappe.log_error(title="FrappeStorageManager Load Error", message=str(e))
