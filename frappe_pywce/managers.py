@@ -123,14 +123,55 @@ class FrappeStorageManager(storage.IStorageManager):
                 self._TRIGGERS = []
                 return
             
+            # ENHANCED DEBUGGING: Log the actual structure being sent to translator
+            logger.debug(f"First template structure: {json.dumps(extracted_flow['templates'][0], indent=2)}")
+            logger.debug(f"Flow structure keys: {extracted_flow.keys()}")
+            logger.debug(f"Full extracted_flow: {json.dumps(extracted_flow, indent=2)[:1000]}...")  # First 1000 chars
+            
             ui_translator = VisualTranslator()
-            self._TEMPLATES, self._TRIGGERS = ui_translator.translate(extracted_flow)
+            
+            # CRITICAL: Check what translate() actually returns
+            logger.info("Calling VisualTranslator.translate()...")
+            result = ui_translator.translate(extracted_flow)
+            
+            logger.info(f"Translation result type: {type(result)}")
+            logger.info(f"Translation result: {result}")
+            
+            # Check if result is a tuple or something else
+            if isinstance(result, tuple) and len(result) == 2:
+                templates_dict, triggers_list = result
+                logger.info(f"Unpacked tuple: templates={type(templates_dict)}, triggers={type(triggers_list)}")
+                logger.info(f"Templates dict keys: {list(templates_dict.keys()) if isinstance(templates_dict, dict) else 'NOT A DICT'}")
+                logger.info(f"Triggers count: {len(triggers_list) if isinstance(triggers_list, list) else 'NOT A LIST'}")
+                
+                self._TEMPLATES = templates_dict
+                self._TRIGGERS = triggers_list
+            else:
+                logger.error(f"Unexpected translate() return type: {type(result)}")
+                logger.error(f"Expected tuple of (dict, list), got: {result}")
+                self._TEMPLATES = {}
+                self._TRIGGERS = []
+                return
+            
             self.START_MENU = ui_translator.START_MENU
             self.REPORT_MENU = ui_translator.REPORT_MENU
             
             logger.info(f"Translation complete: {len(self._TEMPLATES)} templates, {len(self._TRIGGERS)} triggers")
             logger.info(f"Template IDs after translation: {list(self._TEMPLATES.keys())}")
             logger.info(f"START_MENU: {self.START_MENU}, REPORT_MENU: {self.REPORT_MENU}")
+            
+            # CRITICAL: If still empty, inspect the translator's internal state
+            if not self._TEMPLATES:
+                logger.error("TEMPLATES is empty after translation!")
+                logger.error(f"Translator attributes: {dir(ui_translator)}")
+                logger.error(f"Translator START_MENU: {ui_translator.START_MENU}")
+                logger.error(f"Translator REPORT_MENU: {ui_translator.REPORT_MENU}")
+                
+                # Try to access translator's internal data if available
+                if hasattr(ui_translator, '_templates'):
+                    logger.error(f"Translator _templates: {ui_translator._templates}")
+                if hasattr(ui_translator, 'templates'):
+                    logger.error(f"Translator templates: {ui_translator.templates}")
 
         except Exception as e:
             frappe.log_error(title="FrappeStorageManager Load Error", message=str(e))
