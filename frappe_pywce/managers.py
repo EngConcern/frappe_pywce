@@ -96,66 +96,159 @@ class FrappeStorageManager(storage.IStorageManager):
             logger.error(f"Invalid flow_json format. Keys found: {flow_data.keys() if isinstance(flow_data, dict) else 'not a dict'}")
             raise Exception("Invalid flow_json format: missing 'chatbots' or 'templates' key")
     
+    def _normalize_message_field(self, message):
+        """
+        Normalize message field to be compatible with pydantic validation.
+        
+        Handles both formats:
+        - String: "message text"
+        - Object: {"body": "...", "title": "...", "footer": "..."}
+        """
+        if isinstance(message, str):
+            return message
+        elif isinstance(message, dict):
+            # If it's a dict, keep it as-is for now (pydantic will handle it)
+            return message
+        else:
+            logger.warning(f"Invalid message type: {type(message)}, converting to empty string")
+            return ""
+    
     def _validate_and_fix_template(self, template_name: str, template_data: dict) -> dict:
         """Validate and fix common template issues before they cause errors."""
         # Handle both old 'type' and new 'kind' field names
         template_type = template_data.get('kind') or template_data.get('type', 'unknown')
         
-        # Ensure we have a message object
-        message = template_data.get('message', {})
-        if not isinstance(message, dict):
-            logger.warning(f"Template '{template_name}' has invalid message field, creating empty object")
-            message = {}
-            template_data['message'] = message
+        # Ensure we have a message field
+        if 'message' not in template_data:
+            logger.warning(f"Template '{template_name}' missing message field, creating empty string")
+            template_data['message'] = ""
         
-        # Fix button templates missing 'buttons' field
-        if template_type == 'button':
-            if 'buttons' not in message or not message.get('buttons'):
-                logger.warning(f"Template '{template_name}' is type 'button' but has no buttons!")
+        # Normalize message field
+        message = template_data.get('message')
+        
+        # For request-location templates, message should be a string
+        if template_type == 'request-location':
+            if isinstance(message, dict):
+                # Extract meaningful text from dict
+                text = message.get('body') or message.get('title') or "Please share your location"
+                logger.warning(f"Template '{template_name}' (request-location) has dict message, converting to string: {text}")
+                template_data['message'] = text
+            elif not message:
+                logger.warning(f"Template '{template_name}' (request-location) has empty message, setting default")
+                template_data['message'] = "Please share your location"
+        
+        # For text templates, message should be a string
+        elif template_type == 'text':
+            if isinstance(message, dict):
+                # Extract meaningful text from dict - combine title and body
+                title = message.get('title', '')
+                body = message.get('body', '')
                 
-                # Check if body is empty - if so, this might be a placeholder template
-                if not message.get('body') and not message.get('title'):
-                    logger.info(f"Template '{template_name}' appears to be empty placeholder, converting to text")
-                    template_data['kind'] = 'text'
-                    if 'type' in template_data:
-                        template_data['type'] = 'text'
+                if title and body:
+                    text = f"*{title}*\n\n{body}"
+                elif title:
+                    text = title
+                elif body:
+                    text = body
                 else:
-                    # Convert to text template since it has content but no buttons
-                    logger.info(f"Converting '{template_name}' from 'button' to 'text' template")
-                    template_data['kind'] = 'text'
-                    if 'type' in template_data:
-                        template_data['type'] = 'text'
+                    text = "Message content not available"
+                
+                logger.warning(f"Template '{template_name}' (text) has dict message, converting to string")
+                template_data['message'] = text
+            elif not message:
+                logger.warning(f"Template '{template_name}' (text) has empty message")
+                template_data['message'] = "Message content not available"
         
-        # Fix list templates with malformed sections
+        # For button templates
+        elif template_type == 'button':
+            if isinstance(message, dict):
+                buttons = message.get('buttons', [])
+                if not buttons or len(buttons) == 0:
+                    # No buttons - convert to text template
+                    title = message.get('title', '')
+                    body = message.get('body', '')
+                    
+                    if not body and not title:
+                        logger.info(f"Template '{template_name}' appears to be empty placeholder, converting to text")
+                        template_data['kind'] = 'text'
+                        if 'type' in template_data:
+                            template_data['type'] = 'text'
+                        template_data['message'] = "No content available"
+                    else:
+                        logger.info(f"Converting '{template_name}' from 'button' to 'text' template (no buttons)")
+                        template_data['kind'] = 'text'
+                        if 'type' in template_data:
+                            template_data['type'] = 'text'
+                        
+                        # Combine title and body for text message
+                        if title and body:
+                            template_data['message'] = f"*{title}*\n\n{body}"
+                        elif title:
+                            template_data['message'] = title
+                        else:
+                            template_data['message'] = body
+        
+        # For list templates
         elif template_type == 'list':
-            if 'sections' not in message:
-                logger.warning(f"Template '{template_name}' is type 'list' but has no sections!")
-                message['sections'] = []
-                template_data['message'] = message
-            else:
-                # Validate sections structure
+            if isinstance(message, dict):
                 sections = message.get('sections', [])
                 if not isinstance(sections, list):
-                    logger.error(f"Template '{template_name}' has invalid sections (not a list): {type(sections)}")
+                    logger.error(f"Template '{template_name}' has invalid sections (not a list)")
                     message['sections'] = []
                     template_data['message'] = message
                 else:
-                    # Ensure each section is properly formatted
+                    # Validate and fix each section structure
                     fixed_sections = []
                     for i, section in enumerate(sections):
                         if isinstance(section, dict):
+                            # Ensure rows exist and is a list
+                            rows = section.get('rows', [])
+                            if not isinstance(rows, list):
+                                logger.warning(f"Template '{template_name}' section {i} has invalid rows (not a list)")
+                                section['rows'] = []
+                            else:
+                                # Normalize row structure (WhatsApp uses 'id', pywce might use 'identifier')
+                                fixed_rows = []
+                                for j, row in enumerate(rows):
+                                    if isinstance(row, dict):
+                                        # Create a clean row dict
+                                        fixed_row = {
+                                            'title': row.get('title', f'Item {j}'),
+                                            'identifier': row.get('identifier') or row.get('id', str(j)),
+                                            'description': row.get('description') or row.get('desc', '')
+                                        }
+                                        fixed_rows.append(fixed_row)
+                                    else:
+                                        logger.warning(f"Template '{template_name}' section {i} row {j} is not a dict, skipping")
+                                
+                                section['rows'] = fixed_rows
+                            
+                            # Ensure section has a title
+                            if 'title' not in section or not section['title']:
+                                section['title'] = f'Section {i+1}'
+                            
                             fixed_sections.append(section)
                         else:
                             logger.warning(f"Template '{template_name}' section {i} is not a dict, skipping")
+                    
                     message['sections'] = fixed_sections
                     template_data['message'] = message
+                    
+                    logger.info(f"Template '{template_name}' (list) fixed with {len(fixed_sections)} sections")
         
-        # Fix CTA templates missing 'url' field
-        elif template_type == 'cta':
-            if 'url' not in message:
-                logger.warning(f"Template '{template_name}' is type 'cta' but has no url!")
-                message['url'] = ''
-                template_data['message'] = message
+        # Normalize routes structure
+        if 'routes' in template_data:
+            routes = template_data['routes']
+            if isinstance(routes, list):
+                # Routes are already in list format (good for pywce)
+                pass
+            elif isinstance(routes, dict):
+                # Routes might be in dict format - keep as-is for now
+                pass
+            elif routes is None or routes == []:
+                template_data['routes'] = []
+        else:
+            template_data['routes'] = []
         
         return template_data
     
@@ -166,14 +259,37 @@ class FrappeStorageManager(storage.IStorageManager):
         
         for template_name, template_data in self._TEMPLATES.items():
             routes = template_data.get('routes', [])
-            for route in routes:
-                next_template = route.get('next_stage') or route.get('connectedTo')
-                if next_template in invalid_template_names:
-                    broken_routes.append({
-                        'from_template': template_name,
-                        'to_template': next_template,
-                        'route': route
-                    })
+            
+            # Handle different route formats
+            if isinstance(routes, dict):
+                # Routes is a dict mapping patterns to template names
+                for pattern, next_template in routes.items():
+                    if isinstance(next_template, str) and next_template in invalid_template_names:
+                        broken_routes.append({
+                            'from_template': template_name,
+                            'to_template': next_template,
+                            'route_pattern': pattern
+                        })
+            elif isinstance(routes, list):
+                # Routes is a list of route objects
+                for route in routes:
+                    if isinstance(route, dict):
+                        # Try both possible keys for next template
+                        next_template = route.get('next_stage') or route.get('connectedTo')
+                        if next_template and next_template in invalid_template_names:
+                            broken_routes.append({
+                                'from_template': template_name,
+                                'to_template': next_template,
+                                'route': route
+                            })
+                    elif isinstance(route, str):
+                        # Route is just a string (template name)
+                        if route in invalid_template_names:
+                            broken_routes.append({
+                                'from_template': template_name,
+                                'to_template': route,
+                                'route': route
+                            })
         
         if broken_routes:
             logger.error(f"Found {len(broken_routes)} broken routes pointing to invalid templates:")
@@ -221,6 +337,53 @@ class FrappeStorageManager(storage.IStorageManager):
             self.REPORT_MENU = ui_translator.REPORT_MENU
             
             logger.info(f"Translation complete: {len(raw_templates)} templates, {len(self._TRIGGERS)} triggers")
+            logger.info(f"Initial START_MENU from translator: {self.START_MENU}, REPORT_MENU: {self.REPORT_MENU}")
+            
+            # WORKAROUND: If START_MENU is incorrectly set, find the template with isStart=true in settings
+            if self.START_MENU:
+                start_template_data = raw_templates.get(self.START_MENU, {})
+                settings = start_template_data.get('settings', {})
+                if not settings.get('isStart', False):
+                    logger.warning(f"START_MENU '{self.START_MENU}' does not have isStart=true, searching for correct start template")
+                    # Find the correct start template
+                    for template_name, template_data in raw_templates.items():
+                        tmpl_settings = template_data.get('settings', {})
+                        if tmpl_settings.get('isStart', False):
+                            logger.info(f"Found correct START_MENU: '{template_name}' (was '{self.START_MENU}')")
+                            self.START_MENU = template_name
+                            break
+            else:
+                # No START_MENU set, find it from templates
+                logger.warning("No START_MENU set by translator, searching templates")
+                for template_name, template_data in raw_templates.items():
+                    settings = template_data.get('settings', {})
+                    if settings.get('isStart', False):
+                        logger.info(f"Found START_MENU from settings: '{template_name}'")
+                        self.START_MENU = template_name
+                        break
+            
+            # Similar check for REPORT_MENU
+            if self.REPORT_MENU:
+                report_template_data = raw_templates.get(self.REPORT_MENU, {})
+                settings = report_template_data.get('settings', {})
+                if not settings.get('isReport', False):
+                    logger.warning(f"REPORT_MENU '{self.REPORT_MENU}' does not have isReport=true, searching for correct report template")
+                    for template_name, template_data in raw_templates.items():
+                        tmpl_settings = template_data.get('settings', {})
+                        if tmpl_settings.get('isReport', False):
+                            logger.info(f"Found correct REPORT_MENU: '{template_name}' (was '{self.REPORT_MENU}')")
+                            self.REPORT_MENU = template_name
+                            break
+            else:
+                # No REPORT_MENU set, try to find it
+                for template_name, template_data in raw_templates.items():
+                    settings = template_data.get('settings', {})
+                    if settings.get('isReport', False):
+                        logger.info(f"Found REPORT_MENU from settings: '{template_name}'")
+                        self.REPORT_MENU = template_name
+                        break
+            
+            logger.info(f"Final START_MENU: {self.START_MENU}, REPORT_MENU: {self.REPORT_MENU}")
             
             # Validate and fix templates before storing
             self._TEMPLATES = {}
@@ -238,11 +401,56 @@ class FrappeStorageManager(storage.IStorageManager):
                     self._TEMPLATES[template_name] = fixed_template
                     
                 except Exception as e:
-                    logger.error(f"Validation failed for template '{template_name}': {e}")
+                    error_msg = str(e)
+                    logger.error(f"Validation failed for template '{template_name}': {error_msg}")
                     logger.error(f"Template data: {json.dumps(template_data, indent=2)}")
+                    
+                    # Try one more fix attempt for specific errors
+                    retry = False
+                    
+                    # Handle "list object has no attribute 'items'" error for list templates
+                    if "'list' object has no attribute 'items'" in error_msg:
+                        template_type = template_data.get('kind') or template_data.get('type')
+                        if template_type == 'list':
+                            logger.warning(f"Attempting to fix list template '{template_name}' structure")
+                            # Try converting to a simpler structure or skip problematic fields
+                            message = template_data.get('message', {})
+                            if isinstance(message, dict) and 'sections' in message:
+                                # Simplify sections structure
+                                sections = message.get('sections', [])
+                                simplified_sections = []
+                                for section in sections:
+                                    if isinstance(section, dict):
+                                        simplified_section = {
+                                            'title': str(section.get('title', 'Section')),
+                                            'rows': []
+                                        }
+                                        rows = section.get('rows', [])
+                                        for row in rows:
+                                            if isinstance(row, dict):
+                                                simplified_section['rows'].append({
+                                                    'title': str(row.get('title', '')),
+                                                    'identifier': str(row.get('identifier') or row.get('id', '')),
+                                                    'description': str(row.get('description') or row.get('desc', ''))
+                                                })
+                                        simplified_sections.append(simplified_section)
+                                
+                                message['sections'] = simplified_sections
+                                template_data['message'] = message
+                                retry = True
+                    
+                    if retry:
+                        try:
+                            validated = template.Template.as_model(template_data)
+                            self._TEMPLATES[template_name] = template_data
+                            logger.info(f"Successfully fixed template '{template_name}' on retry")
+                            continue
+                        except Exception as retry_error:
+                            logger.error(f"Retry failed for template '{template_name}': {retry_error}")
+                    
                     validation_errors.append({
                         'name': template_name,
-                        'error': str(e),
+                        'error': error_msg,
                         'data': template_data
                     })
                     
@@ -302,9 +510,7 @@ class FrappeStorageManager(storage.IStorageManager):
         
         error_template_data = {
             'kind': 'text',
-            'message': {
-                'body': f"⚠️ Template Error\n\nThe template '{template_name}' could not be loaded.\n\nError: {error_message}\n\nPlease contact the administrator to fix this template."
-            },
+            'message': f"⚠️ Template Error\n\nThe template '{template_name}' could not be loaded.\n\nError: {error_message}\n\nPlease contact the administrator to fix this template.",
             'routes': [],
             'checkpoint': False
         }
@@ -337,9 +543,14 @@ class FrappeStorageManager(storage.IStorageManager):
                 logger.error(f"Available template IDs: {list(self._TEMPLATES.keys())}")
                 return self._get_error_template(name, f"Template not found: {name}")
             
+            # Log template data for debugging
+            logger.debug(f"Retrieved template '{name}': {json.dumps(template_data, indent=2)}")
+            
             # Validate before returning
             try:
-                return template.Template.as_model(template_data)
+                validated_template = template.Template.as_model(template_data)
+                logger.info(f"Template '{name}' validated successfully (type: {template_data.get('kind')})")
+                return validated_template
             except Exception as validation_error:
                 logger.critical(f"Template '{name}' failed runtime validation: {validation_error}")
                 logger.critical(f"Template data: {json.dumps(template_data, indent=2)}")
@@ -350,6 +561,7 @@ class FrappeStorageManager(storage.IStorageManager):
                     validated = template.Template.as_model(fixed_template)
                     # Update stored template with fixed version
                     self._TEMPLATES[name] = fixed_template
+                    logger.info(f"Template '{name}' fixed and validated on retry")
                     return validated
                 except Exception as second_error:
                     logger.critical(f"Template '{name}' still invalid after fix attempt: {second_error}")
