@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Dict, Any, List, Optional, Type, TypeVar
 
 import frappe
@@ -22,6 +23,7 @@ class FrappeStorageManager(storage.IStorageManager):
     - Template validation and auto-fixing
     - Broken route detection
     - Error fallback templates
+    - Message delay, typing indicator, and read receipt support
     - Better logging and diagnostics
     """
     _TEMPLATES: Dict = {}
@@ -250,6 +252,34 @@ class FrappeStorageManager(storage.IStorageManager):
         else:
             template_data['routes'] = []
         
+        # Validate and normalize settings
+        if 'settings' not in template_data:
+            template_data['settings'] = {}
+        
+        settings = template_data['settings']
+        
+        # Validate delay_time (should be integer in seconds)
+        if 'delay_time' in settings:
+            try:
+                delay = settings['delay_time']
+                if isinstance(delay, str):
+                    delay = int(delay)
+                settings['delay_time'] = max(0, int(delay))  # Ensure non-negative
+                logger.info(f"Template '{template_name}' has delay_time: {settings['delay_time']}s")
+            except (ValueError, TypeError):
+                logger.warning(f"Template '{template_name}' has invalid delay_time, removing")
+                settings.pop('delay_time', None)
+        
+        # Validate typing (should be boolean)
+        if 'typing' in settings:
+            settings['typing'] = bool(settings['typing'])
+            logger.info(f"Template '{template_name}' typing indicator: {settings['typing']}")
+        
+        # Validate ack (should be boolean)
+        if 'ack' in settings:
+            settings['ack'] = bool(settings['ack'])
+            logger.info(f"Template '{template_name}' read receipt: {settings['ack']}")
+        
         return template_data
     
     def _check_for_broken_routes(self, validation_errors: List[dict]) -> None:
@@ -319,6 +349,8 @@ class FrappeStorageManager(storage.IStorageManager):
             extracted_flow = self._extract_all_templates_from_flow(flow_data)
             
             logger.info(f"Extracted flow structure: templates={len(extracted_flow.get('templates', []))}, version={extracted_flow.get('version')}")
+            logger.info("Extracted flow JSON:\n%s",frappe.as_json(extracted_flow, indent=2)            
+        )
             
             if not extracted_flow.get('templates'):
                 logger.warning("No templates to translate!")
@@ -571,6 +603,38 @@ class FrappeStorageManager(storage.IStorageManager):
             frappe.log_error(title="Get Template Error", message=f"Template: {name}, Error: {str(e)}")
             logger.critical(f"Error fetching template '{name}': {str(e)}", exc_info=True)
             return self._get_error_template(name, str(e))
+
+    def get_template_settings(self, name: str) -> dict:
+        """
+        Get the settings for a template including delay_time, typing, and ack.
+        
+        Returns empty dict if template doesn't exist or has no settings.
+        """
+        self._ensure_templates_loaded()
+        
+        template_data = self._TEMPLATES.get(name)
+        if not template_data:
+            logger.warning(f"Cannot get settings for non-existent template '{name}'")
+            return {}
+        
+        settings = template_data.get('settings', {})
+        
+        # Extract relevant settings
+        result = {}
+        
+        if 'delay_time' in settings:
+            result['delay_time'] = settings['delay_time']
+        
+        if 'typing' in settings:
+            result['typing'] = settings['typing']
+        
+        if 'ack' in settings:
+            result['ack'] = settings['ack']
+        
+        if result:
+            logger.info(f"Template '{name}' settings: {result}")
+        
+        return result
 
     def triggers(self) -> List[template.EngineRoute]:
         return self._TRIGGERS

@@ -1,3 +1,4 @@
+import time
 import frappe
 
 from frappe_pywce.managers import FrappeRedisSessionManager, FrappeStorageManager
@@ -10,7 +11,7 @@ from pywce import Engine, client, EngineConfig, HookArg
 LOCAL_EMULATOR_URL = "http://localhost:3001/send-to-emulator"
 
 def on_hook_listener(arg: HookArg) -> None:
-    """Save hook to local
+    """Save hook to local and apply message controls (delay, typing, ack)
 
     arg = getattr(frappe.local, "hook_arg", None)
     
@@ -31,6 +32,56 @@ def on_hook_listener(arg: HookArg) -> None:
             app_logger.info(f"Hook Data: {arg.__dict__}")
     except Exception as e:
         app_logger.warning(f"Could not log hook data: {e}")
+    
+    # APPLY MESSAGE CONTROLS HERE (before message is sent)
+    try:
+        # Get storage manager from frappe.local if available
+        storage_manager = getattr(frappe.local, 'storage_manager', None)
+        wa_client = getattr(frappe.local, 'wa_client', None)
+        
+        if storage_manager and hasattr(arg, 'template_name') and hasattr(arg, 'recipient'):
+            template_name = arg.template_name
+            recipient = arg.recipient
+            
+            # Get template settings
+            settings = storage_manager.get_template_settings(template_name)
+            
+            if settings:
+                app_logger.info("=" * 80)
+                app_logger.info(f"📋 APPLYING MESSAGE CONTROLS FOR: {template_name}")
+                app_logger.info("=" * 80)
+                
+                # Apply typing indicator
+                if settings.get('typing', False) and wa_client:
+                    try:
+                        app_logger.info("⌨️ Sending typing indicator...")
+                        wa_client.mark_typing(recipient)
+                        app_logger.info("✅ Typing indicator sent")
+                    except Exception as e:
+                        app_logger.error(f"❌ Failed to send typing indicator: {e}")
+                
+                # Apply delay
+                delay_time = settings.get('delay_time', 0)
+                app_logger.info(f"============================Delaying message by {delay_time} seconds...")
+                if delay_time > 0:
+                    app_logger.info(f"⏳ Delaying message by {delay_time} seconds...")
+                    time.sleep(delay_time)
+                    app_logger.info(f"✅ Delay complete ({delay_time}s)")
+                
+                # Apply read receipt (before sending - marks conversation as read)
+                if settings.get('ack', False) and wa_client:
+                    try:
+                        app_logger.info("✓✓ Marking as read...")
+                        wa_client.mark_read(recipient)
+                        app_logger.info("✅ Read receipt sent")
+                    except Exception as e:
+                        app_logger.error(f"❌ Failed to send read receipt: {e}")
+                
+                app_logger.info("=" * 80)
+            else:
+                app_logger.info(f"No specific message controls for template: {template_name}")
+    except Exception as e:
+        app_logger.error(f"❌ Failed to apply message controls: {e}")
     
     frappe.local.hook_arg = arg
     app_logger.info('✅ Updated hook arg in frappe.local')
@@ -89,6 +140,7 @@ def get_engine_config() -> Engine:
     1. Loads templates via FrappeStorageManager
     2. Manages sessions via FrappeRedisSessionManager  
     3. Sends messages via WhatsApp client
+    4. Applies message controls (delay, typing, ack) in hook listener
     """
     try:
         app_logger.info("=" * 80)
@@ -110,13 +162,18 @@ def get_engine_config() -> Engine:
         
         # Initialize WhatsApp client
         app_logger.info("3️⃣ Initializing WhatsApp Client...")
-        wa = get_wa_config(settings)
+        wa_client = get_wa_config(settings)
         app_logger.info(f"   ✅ WhatsApp client ready")
+        
+        # Store in frappe.local for hook listener access
+        frappe.local.storage_manager = storage_manager
+        frappe.local.wa_client = wa_client
+        app_logger.info("   ✅ Stored storage_manager and wa_client in frappe.local")
         
         # Create engine config
         app_logger.info("4️⃣ Creating Engine Configuration...")
         _eng_config = EngineConfig(
-            whatsapp=wa,
+            whatsapp=wa_client,
             storage_manager=storage_manager,
             start_template_stage=storage_manager.START_MENU,
             report_template_stage=storage_manager.REPORT_MENU,
@@ -132,7 +189,7 @@ def get_engine_config() -> Engine:
         app_logger.info(f"   ✅ Engine initialized successfully")
         
         app_logger.info("=" * 80)
-        app_logger.info("✅ PYWCE ENGINE READY")
+        app_logger.info("✅ PYWCE ENGINE READY WITH MESSAGE CONTROLS IN HOOK")
         app_logger.info("=" * 80)
         
         return engine
