@@ -20,7 +20,7 @@ export const SettingsTab = ({ template, onUpdate }: SettingsTabProps) => {
   };
 
   const settings = template.settings || {};
-
+ 
   const settingItems = [
     {
       key: 'authenticated',

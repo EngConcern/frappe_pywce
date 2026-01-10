@@ -11,6 +11,7 @@ interface PropertiesSidebarProps {
   template: ChatbotTemplate | null;
   onClose: () => void;
   onUpdate: (template: ChatbotTemplate) => void;
+  onSave?: () => void;
   onDelete: () => void;
 }
 
@@ -64,7 +65,7 @@ export const PropertiesSidebar = ({
       </Tabs>
 
       <div className="p-4 border-t border-sidebar-border flex gap-2">
-        <Button className="flex-1" onClick={onClose}>
+        <Button className="flex-1" onClick={() => { onSave ? onSave() : onClose(); }}>
           Save Changes
         </Button>
         <Button variant="destructive" onClick={onDelete}>

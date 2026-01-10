@@ -897,6 +897,7 @@ const saveCurrentFlowJson = () => {
           onClose={() => setSelectedTemplate(null)}
           onUpdate={updateTemplate}
           onDelete={deleteTemplate}
+          onSave={saveCurrentFlowJson}
         />
       )}
 
