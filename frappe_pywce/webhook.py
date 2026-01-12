@@ -6,6 +6,8 @@ import redis.exceptions
 
 import frappe
 import frappe.utils
+import re
+import os
 
 from frappe_pywce.config import get_engine_config, get_wa_config
 from frappe_pywce.util import CACHE_KEY_PREFIX, LOCK_WAIT_TIME, LOCK_LEASE_TIME, bot_settings, create_cache_key
@@ -229,6 +231,409 @@ def _save_message_status(payload: dict):
         frappe.log_error(title="WhatsApp Message Status Update Error", message=str(e))
 
 
+def _get_message_template_type(message: dict) -> str:
+    """Determine the message template type from message data
+    
+    Args:
+        message (dict): Message data from webhook payload
+        
+    Returns:
+        str: Message template type
+    """
+    message_type = message.get('type', 'text')
+    
+    # Map message types to template types
+    template_type_map = {
+        'text': 'text',
+        'button': 'button',
+        'list': 'list',
+        'flow': 'flow',
+        'image': 'media',
+        'video': 'media',
+        'audio': 'media',
+        'voice': 'media',
+        'document': 'media',
+        'sticker': 'media',
+        'location': 'location',
+        'contacts': 'cta',
+        'interactive': 'dynamic',
+    }
+    
+    return template_type_map.get(message_type, 'template')
+
+
+def _process_message_templates(payload: dict):
+    """Process different message template types from webhook payload
+    
+    Args:
+        payload (dict): WhatsApp webhook payload containing messages
+    """
+    try:
+        if not payload.get('entry'):
+            return
+        
+        for entry in payload.get('entry', []):
+            for change in entry.get('changes', []):
+                value = change.get('value', {})
+                messages = value.get('messages', [])
+                
+                for message in messages:
+                    # Determine template type
+                    template_type = _get_message_template_type(message)
+                    
+                    # Route message processing based on template type
+                    if template_type == 'text':
+                        _process_text_template(message, payload)
+                    elif template_type == 'button':
+                        _process_button_template(message, payload)
+                    elif template_type == 'list':
+                        _process_list_template(message, payload)
+                    elif template_type == 'flow':
+                        _process_flow_template(message, payload)
+                    elif template_type == 'media':
+                        _process_media_template(message, payload)
+                    elif template_type == 'location':
+                        _process_location_template(message, payload)
+                    elif template_type == 'cta':
+                        _process_cta_template(message, payload)
+                    elif template_type == 'dynamic':
+                        _process_dynamic_template(message, payload)
+                    else:
+                        _process_generic_template(message, payload)
+                    
+                    logger.debug(f"Processed {template_type} template for message {message.get('id', '')}")
+        
+    except Exception as e:
+        logger.error(f"Error processing message templates: {str(e)}")
+        frappe.log_error(title="Message Template Processing Error", message=str(e))
+
+
+def _process_text_template(message: dict, payload: dict):
+    """Process text message template"""
+    logger.debug(f"Processing text template: {message.get('id', '')}")
+    
+    # Extract phone number and message text
+    phone_number = message.get('from', '')
+    message_text = message.get('text', {}).get('body', '')
+    
+    # Process through chatbot logic
+    _process_chatbot_message(phone_number, message_text)
+
+
+def _process_button_template(message: dict, payload: dict):
+    """Process button message template"""
+    logger.debug(f"Processing button template: {message.get('id', '')}")
+    
+    # Extract phone number and button response
+    phone_number = message.get('from', '')
+    button_data = message.get('button', {})
+    button_text = button_data.get('text', '')
+    
+    # Process through chatbot logic
+    _process_chatbot_message(phone_number, button_text)
+
+
+def _process_list_template(message: dict, payload: dict):
+    """Process list message template"""
+    logger.debug(f"Processing list template: {message.get('id', '')}")
+
+
+def _process_flow_template(message: dict, payload: dict):
+    """Process flow message template"""
+    logger.debug(f"Processing flow template: {message.get('id', '')}")
+
+
+def _process_media_template(message: dict, payload: dict):
+    """Process media message template (image, video, audio, document, etc.)"""
+    logger.debug(f"Processing media template: {message.get('id', '')}")
+
+
+def _process_location_template(message: dict, payload: dict):
+    """Process location message template"""
+    logger.debug(f"Processing location template: {message.get('id', '')}")
+
+
+def _process_cta_template(message: dict, payload: dict):
+    """Process call-to-action (contacts) message template"""
+    logger.debug(f"Processing CTA template: {message.get('id', '')}")
+
+
+def _process_dynamic_template(message: dict, payload: dict):
+    """Process dynamic/interactive message template"""
+    logger.debug(f"Processing dynamic template: {message.get('id', '')}")
+    
+    # Extract phone number and interactive response
+    phone_number = message.get('from', '')
+    interactive_data = message.get('interactive', {})
+    interactive_type = interactive_data.get('type', '')
+    
+    response_text = ''
+    
+    if interactive_type == 'button_reply':
+        button_reply = interactive_data.get('button_reply', {})
+        response_text = button_reply.get('title', '')
+    elif interactive_type == 'list_reply':
+        list_reply = interactive_data.get('list_reply', {})
+        response_text = list_reply.get('title', '')
+    
+    if response_text:
+        # Process through chatbot logic
+        _process_chatbot_message(phone_number, response_text)
+
+
+def _process_generic_template(message: dict, payload: dict):
+    """Process generic/unknown message template"""
+    logger.debug(f"Processing generic template: {message.get('id', '')}")
+
+
+def _load_chatbot_config():
+    """Load chatbot configuration from JSON file"""
+    try:
+        # Try to find the chatbot config file
+        config_paths = [
+            os.path.join(frappe.get_app_path("frappe_pywce"), "chatbot_config.json"),
+            os.path.join(frappe.get_site_path(), "private", "files", "chatbot_config.json"),
+            "/home/frappe/frappe-bench/sites/site1.local/private/files/chatbot_config.json"
+        ]
+        
+        config_data = None
+        for path in config_paths:
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                logger.info(f"Loaded chatbot config from: {path}")
+                break
+        
+        if not config_data:
+            logger.warning("Chatbot config file not found in any of the expected locations")
+            return None
+            
+        return config_data
+    except Exception as e:
+        logger.error(f"Error loading chatbot config: {str(e)}")
+        return None
+
+
+def _get_active_chatbot(config_data):
+    """Get the active chatbot from config"""
+    if not config_data or not config_data.get('chatbots'):
+        return None
+    
+    # For now, return the first chatbot or one named "Test"
+    chatbots = config_data.get('chatbots', [])
+    for bot in chatbots:
+        if bot.get('name') == 'Test':
+            return bot
+    
+    # Return first chatbot if Test not found
+    return chatbots[0] if chatbots else None
+
+
+def _find_template_by_route(chatbot, incoming_message_text):
+    """Find template by matching routes in the chatbot"""
+    if not chatbot or not chatbot.get('templates'):
+        return None
+    
+    incoming_text = incoming_message_text.lower().strip() if incoming_message_text else ""
+    
+    for template in chatbot.get('templates', []):
+        routes = template.get('routes', [])
+        settings = template.get('settings', {})
+        
+        # First check routes
+        for route in routes:
+            pattern = route.get('pattern', '').lower().strip()
+            is_regex = route.get('isRegex', False)
+            
+            if is_regex:
+                try:
+                    if re.match(pattern, incoming_text, re.IGNORECASE):
+                        return template
+                except re.error:
+                    continue
+            else:
+                if pattern in incoming_text:
+                    return template
+        
+        # Then check trigger patterns in settings
+        trigger = settings.get('trigger', '')
+        if trigger:
+            try:
+                if re.match(trigger, incoming_message_text, re.IGNORECASE):
+                    return template
+            except re.error:
+                # If trigger is not a valid regex, treat as plain text
+                if trigger.lower() in incoming_text:
+                    return template
+    
+    return None
+
+
+def _find_template_by_level(chatbot, phone_number):
+    """Find template by user's next level from last message"""
+    if not chatbot or not chatbot.get('templates'):
+        return None
+    
+    try:
+        # Get the last message for this phone number
+        last_message = frappe.get_all(
+            "WhatsApp Chat Message",
+            filters={
+                "phone_number": phone_number,
+                "direction": "Outgoing"
+            },
+            fields=["next_level"],
+            order_by="timestamp desc",
+            limit=1
+        )
+        
+        if last_message and last_message[0].get('next_level'):
+            next_level = last_message[0].get('next_level')
+            
+            # Find template with matching message_level
+            for template in chatbot.get('templates', []):
+                settings = template.get('settings', {})
+                if settings.get('message_level') == next_level:
+                    return template
+                    
+    except Exception as e:
+        logger.error(f"Error finding template by level: {str(e)}")
+    
+    return None
+
+
+def _send_template_response(phone_number, template):
+    """Send response using the appropriate template function"""
+    try:
+        template_type = template.get('type', 'text')
+        message_data = template.get('message', {})
+        
+        # Import the API functions
+        from frappe_pywce.api.whatsapp_api import (
+            send_text_message, send_button_message, send_list_message,
+            send_flow_message, send_media_message, send_location_message,
+            send_contact_message, send_template_message
+        )
+        
+        response = None
+        
+        if template_type == 'text':
+            message_text = message_data.get('body', '') if isinstance(message_data, dict) else str(message_data)
+            response = send_text_message(phone_number, message_text)
+            
+        elif template_type == 'button':
+            message_text = message_data.get('body', '')
+            buttons_data = message_data.get('buttons', [])
+            
+            # Format buttons for the API
+            buttons = []
+            for i, btn_text in enumerate(buttons_data):
+                buttons.append({
+                    "id": f"btn_{i}",
+                    "title": btn_text
+                })
+            
+            response = send_button_message(phone_number, message_text, buttons)
+            
+        elif template_type == 'list':
+            # List template handling would go here
+            message_text = message_data.get('body', '')
+            list_title = message_data.get('title', 'Select Option')
+            sections = message_data.get('sections', [])
+            response = send_list_message(phone_number, message_text, list_title, sections)
+            
+        elif template_type == 'flow':
+            flow_token = message_data.get('flow_token', '')
+            flow_data = message_data.get('flow_data', {})
+            response = send_flow_message(phone_number, flow_token, flow_data)
+            
+        elif template_type == 'media':
+            media_type = message_data.get('media_type', 'image')
+            media_url = message_data.get('media_url', '')
+            caption = message_data.get('caption', '')
+            response = send_media_message(phone_number, media_type, media_url, caption)
+            
+        elif template_type == 'location':
+            latitude = message_data.get('latitude', 0)
+            longitude = message_data.get('longitude', 0)
+            name = message_data.get('name', '')
+            address = message_data.get('address', '')
+            response = send_location_message(phone_number, latitude, longitude, name, address)
+            
+        elif template_type == 'contacts':
+            contact_data = message_data.get('contact_data', {})
+            response = send_contact_message(phone_number, contact_data)
+            
+        elif template_type == 'template':
+            template_name = message_data.get('template_name', '')
+            language_code = message_data.get('language_code', 'en')
+            components = message_data.get('components', [])
+            response = send_template_message(phone_number, template_name, language_code, components)
+            
+        else:
+            # Default to text message
+            message_text = message_data.get('body', '') if isinstance(message_data, dict) else str(message_data)
+            response = send_text_message(phone_number, message_text)
+        
+        # Update the message record with template info
+        if response and response.get('success'):
+            settings = template.get('settings', {})
+            message_level = settings.get('message_level', '')
+            next_level = settings.get('next_level', '')
+            
+            # Update the last sent message with level info
+            frappe.db.set_value(
+                'WhatsApp Chat Message',
+                {'message_id': response.get('message_id')},
+                {
+                    'message_level': message_level,
+                    'next_level': next_level
+                }
+            )
+        
+        logger.info(f"Sent {template_type} template response to {phone_number}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error sending template response: {str(e)}")
+        frappe.log_error(title="Template Response Error", message=str(e))
+        return None
+
+
+def _process_chatbot_message(phone_number, message_text):
+    """Process incoming message through chatbot logic"""
+    try:
+        # Load chatbot configuration
+        config_data = _load_chatbot_config()
+        if not config_data:
+            logger.warning("No chatbot config available")
+            return
+        
+        # Get active chatbot
+        chatbot = _get_active_chatbot(config_data)
+        if not chatbot:
+            logger.warning("No active chatbot found")
+            return
+        
+        # First, try to find template by route matching
+        template = _find_template_by_route(chatbot, message_text)
+        
+        # If no route match, try level-based matching
+        if not template:
+            template = _find_template_by_level(chatbot, phone_number)
+        
+        # If template found, send the response
+        if template:
+            logger.info(f"Found template {template.get('id')} for message from {phone_number}")
+            _send_template_response(phone_number, template)
+        else:
+            logger.info(f"No matching template found for message from {phone_number}")
+            
+    except Exception as e:
+        logger.error(f"Error processing chatbot message: {str(e)}")
+        frappe.log_error(title="Chatbot Processing Error", message=str(e))
+
+
 def _internal_webhook_handler(wa_id: str, payload: dict):
     """Process webhook data internally
 
@@ -245,6 +650,9 @@ def _internal_webhook_handler(wa_id: str, payload: dict):
             
             # Update message statuses
             _save_message_status(payload)
+            
+            # Process message templates
+            _process_message_templates(payload)
             
             # Process with existing engine
             get_engine_config().process_webhook(payload)

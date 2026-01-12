@@ -142,23 +142,19 @@ class FrappeStorageManager(storage.IStorageManager):
         # For text templates, message should be a string
         elif template_type == 'text':
             if isinstance(message, dict):
-                # Extract meaningful text from dict - combine title and body
-                title = message.get('title', '')
-                body = message.get('body', '')
-                
-                if title and body:
-                    text = f"*{title}*\n\n{body}"
-                elif title:
-                    text = title
-                elif body:
-                    text = body
+                # Extract the body content from dict
+                if 'body' in message:
+                    body = message['body']
                 else:
-                    text = "Message content not available"
-                
-                logger.warning(f"Template '{template_name}' (text) has dict message, converting to string")
-                template_data['message'] = text
-            elif not message:
-                logger.warning(f"Template '{template_name}' (text) has empty message")
+                    body = message.get('title', '') or message.get('text', '') or "Message content not available"
+                template_data['message'] = body
+            elif isinstance(message, str):
+                # Ensure it's not empty
+                if not message or message.strip() == "":
+                    message = "Message content not available"
+                template_data['message'] = message
+            else:
+                logger.warning(f"Template '{template_name}' (text) has invalid message type, setting default")
                 template_data['message'] = "Message content not available"
         
         # For button templates
@@ -182,13 +178,16 @@ class FrappeStorageManager(storage.IStorageManager):
                         if 'type' in template_data:
                             template_data['type'] = 'text'
                         
-                        # Combine title and body for text message
+                        # Set message as string for text template
                         if title and body:
                             template_data['message'] = f"*{title}*\n\n{body}"
                         elif title:
                             template_data['message'] = title
                         else:
                             template_data['message'] = body
+                else:
+                    # Has buttons, keep as button template
+                    template_data['message'] = message
         
         # For list templates
         elif template_type == 'list':
@@ -253,10 +252,18 @@ class FrappeStorageManager(storage.IStorageManager):
             template_data['routes'] = []
         
         # Validate and normalize settings
+        # First, consolidate settings from both top-level and settings dict
         if 'settings' not in template_data:
             template_data['settings'] = {}
         
         settings = template_data['settings']
+        
+        # Move top-level settings back to settings dict if they exist
+        # (VisualTranslator might move some settings to top level)
+        top_level_settings = ['delay_time', 'typing', 'ack', 'message_level', 'next_level', 'trigger', 'isStart', 'isReport']
+        for setting_key in top_level_settings:
+            if setting_key in template_data and setting_key not in settings:
+                settings[setting_key] = template_data.pop(setting_key)
         
         # Validate delay_time (should be integer in seconds)
         if 'delay_time' in settings:
@@ -279,6 +286,22 @@ class FrappeStorageManager(storage.IStorageManager):
         if 'ack' in settings:
             settings['ack'] = bool(settings['ack'])
             logger.info(f"Template '{template_name}' read receipt: {settings['ack']}")
+        
+        # Validate other settings without modification
+        if 'message_level' in settings:
+            logger.info(f"Template '{template_name}' message_level: {settings['message_level']}")
+        
+        if 'next_level' in settings:
+            logger.info(f"Template '{template_name}' next_level: {settings['next_level']}")
+        
+        if 'isStart' in settings:
+            logger.info(f"Template '{template_name}' isStart: {settings['isStart']}")
+        
+        if 'isReport' in settings:
+            logger.info(f"Template '{template_name}' isReport: {settings['isReport']}")
+        
+        if 'trigger' in settings:
+            logger.info(f"Template '{template_name}' trigger: {settings['trigger']}")
         
         return template_data
     
@@ -606,7 +629,7 @@ class FrappeStorageManager(storage.IStorageManager):
 
     def get_template_settings(self, name: str) -> dict:
         """
-        Get the settings for a template including delay_time, typing, ack, message_level, and next_level.
+        Get the settings for a template including all relevant settings.
         
         Returns empty dict if template doesn't exist or has no settings.
         """
@@ -619,28 +642,11 @@ class FrappeStorageManager(storage.IStorageManager):
         
         settings = template_data.get('settings', {})
         
-        # Extract relevant settings
-        result = {}
+        # Return all settings (they should all be consolidated in the settings dict now)
+        if settings:
+            logger.info(f"Template '{name}' settings: {settings}")
         
-        if 'delay_time' in settings:
-            result['delay_time'] = settings['delay_time']
-        
-        if 'typing' in settings:
-            result['typing'] = settings['typing']
-        
-        if 'ack' in settings:
-            result['ack'] = settings['ack']
-            
-        if 'message_level' in settings:
-            result['message_level'] = settings['message_level']
-            
-        if 'next_level' in settings:
-            result['next_level'] = settings['next_level']
-        
-        if result:
-            logger.info(f"Template '{name}' settings: {result}")
-        
-        return result
+        return settings
 
     def triggers(self) -> List[template.EngineRoute]:
         return self._TRIGGERS

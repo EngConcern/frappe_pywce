@@ -1,0 +1,169 @@
+{
+  "chatbots": [
+    {
+      "name": "333",
+      "templates": []
+    },
+    {
+      "name": "flow 345",
+      "templates": []
+    },
+    {
+      "name": "Test",
+      "templates": [
+        {
+          "id": "button-1765083051672",
+          "name": "START MENU",
+          "type": "button",
+          "message": {
+            "body": "Good Day",
+            "title": "START",
+            "footer": "csg",
+            "buttons": [
+              "ERPs",
+              "POS Systems"
+            ]
+          },
+          "routes": [
+            {
+              "id": "route_1765131838369",
+              "pattern": "erp",
+              "isRegex": false,
+              "connectedTo": "button-1765128554199"
+            },
+            {
+              "id": "route_1765131849318",
+              "pattern": "pos",
+              "isRegex": false,
+              "connectedTo": "button-1765128549875"
+            }
+          ],
+          "settings": {
+            "checkpoint": true,
+            "isStart": true,
+            "isReport": false,
+            "trigger": "(?i)^(hi|hie|hey)$"
+          },
+          "position": {
+            "x": -177.25591895656768,
+            "y": 99.12788000186663
+          }
+        },
+        {
+          "id": "button-1765128549875",
+          "name": "POS Systems",
+          "type": "button",
+          "message": {
+            "body": "Lest of POS we have",
+            "title": "POS Systems",
+            "footer": "csg"
+          },
+          "routes": [
+            {
+              "id": "route_1765132790594",
+              "pattern": "back",
+              "isRegex": false,
+              "connectedTo": "button-1765083051672"
+            }
+          ],
+          "position": {
+            "x": 38.92204279605836,
+            "y": 332.45859364776055
+          }
+        },
+        {
+          "id": "button-1765128554199",
+          "name": "ERPs",
+          "type": "button",
+          "message": {
+            "body": "List of ERPs we have.",
+            "title": "ERPs",
+            "footer": "csg"
+          },
+          "routes": [
+            {
+              "id": "route_1765132807460",
+              "pattern": "back",
+              "isRegex": false,
+              "connectedTo": "button-1765083051672"
+            }
+          ],
+          "position": {
+            "x": -527.4411992515902,
+            "y": 324.4618156538678
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bot3",
+      "templates": [
+        {
+          "id": "button-1767874862844",
+          "name": "button-1767874862844",
+          "type": "button",
+          "message": {
+            "body": "Bot 3 Message",
+            "title": "Bot 3",
+            "footer": "",
+            "buttons": [
+              "Bot 3 btn1",
+              "Bot 3 btn2"
+            ]
+          },
+          "routes": [
+            {
+              "id": "route_1767898238574",
+              "pattern": "text1",
+              "isRegex": false,
+              "connectedTo": "text-1767874885955"
+            },
+            {
+              "id": "route_1767898254437",
+              "pattern": "text2",
+              "isRegex": false,
+              "connectedTo": "text-1767898021271"
+            }
+          ],
+          "settings": {
+            "typing": true,
+            "isStart": true,
+            "isReport": false,
+            "trigger": "bot3|Bot3",
+            "delay_time": 5,
+            "message_level": "zero",
+            "next_level": "one"
+          },
+          "handleOrientation": "horizontal",
+          "position": {
+            "x": 111.67125174481458,
+            "y": 52.4021933690847
+          }
+        },
+        {
+          "id": "text-1767874885955",
+          "name": "text-1767874885955",
+          "type": "text",
+          "message": "",
+          "routes": [],
+          "position": {
+            "x": 49.956779103546125,
+            "y": 262.5426639093797
+          }
+        },
+        {
+          "id": "text-1767898021271",
+          "name": "text-1767898021271",
+          "type": "text",
+          "message": "",
+          "routes": [],
+          "position": {
+            "x": 299.00683825913484,
+            "y": 247.11039571833442
+          }
+        }
+      ]
+    }
+  ],
+  "version": "1.0"
+}
