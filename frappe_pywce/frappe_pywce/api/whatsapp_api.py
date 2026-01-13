@@ -39,8 +39,22 @@ def send_message(phone_number, message_text, message_type="text", media_url=None
         if not config.access_token or not config.phone_id:
             frappe.throw(_("ChatBot Config not properly configured. Please set Access Token and Phone ID"))
         
+        # Validate and format phone number
+        if not phone_number:
+            frappe.throw(_("Phone number is required"))
+        
+        # Remove any non-numeric characters and ensure it starts with country code
+        clean_phone = ''.join(filter(str.isdigit, str(phone_number)))
+        if len(clean_phone) < 10:
+            frappe.throw(_("Invalid phone number format"))
+        
+        # If it doesn't start with country code, assume it's missing (this is a basic check)
+        if len(clean_phone) == 10:
+            # Assume South African number if 10 digits
+            clean_phone = f"27{clean_phone}"
+        
         # Ensure contact exists
-        contact = get_or_create_contact(phone_number)
+        contact = get_or_create_contact(clean_phone)
         
         # Prepare API request
         url = f"https://graph.facebook.com/v18.0/{config.phone_id}/messages"
@@ -53,7 +67,7 @@ def send_message(phone_number, message_text, message_type="text", media_url=None
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": phone_number
+            "to": clean_phone
         }
         
         if message_type == "text":
@@ -228,6 +242,30 @@ def send_button_message(phone_number, message_text, buttons):
         if not config.access_token or not config.phone_id:
             frappe.throw(_("ChatBot Config not properly configured"))
 
+        # Validate inputs
+        if not message_text or not message_text.strip():
+            frappe.throw(_("Message text cannot be empty"))
+        
+        if not buttons or len(buttons) == 0:
+            frappe.throw(_("At least one button is required"))
+        
+        if len(buttons) > 3:
+            frappe.throw(_("Maximum 3 buttons allowed"))
+
+        # Validate and format phone number
+        if not phone_number:
+            frappe.throw(_("Phone number is required"))
+        
+        # Remove any non-numeric characters and ensure it starts with country code
+        clean_phone = ''.join(filter(str.isdigit, str(phone_number)))
+        if len(clean_phone) < 10:
+            frappe.throw(_("Invalid phone number format"))
+        
+        # If it doesn't start with country code, assume it's missing (this is a basic check)
+        if len(clean_phone) == 10:
+            # Assume South African number if 10 digits
+            clean_phone = f"27{clean_phone}"
+
         url = f"https://graph.facebook.com/v18.0/{config.phone_id}/messages"
         headers = {
             "Authorization": f"Bearer {config.access_token}",
@@ -237,16 +275,25 @@ def send_button_message(phone_number, message_text, buttons):
         # Format buttons for WhatsApp API
         button_rows = []
         for i, button in enumerate(buttons[:3]):  # WhatsApp allows max 3 buttons
+            button_id = button.get("id", f"btn_{i}")
+            button_title = button.get("title", f"Button {i+1}")
+            
+            # Validate button title length (max 20 characters for buttons)
+            if len(button_title) > 20:
+                button_title = button_title[:20]
+            
             button_rows.append({
-                "id": button.get("id", f"btn_{i}"),
-                "title": button.get("title", f"Button {i+1}"),
-                "type": "reply"
+                "type": "reply",
+                "reply": {
+                    "id": button_id,
+                    "title": button_title
+                }
             })
 
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
-            "to": phone_number,
+            "to": clean_phone,
             "type": "interactive",
             "interactive": {
                 "type": "button",
@@ -254,6 +301,10 @@ def send_button_message(phone_number, message_text, buttons):
                 "action": {"buttons": button_rows}
             }
         }
+
+        # Debug logging
+        import frappe
+        frappe.logger().info(f"Button message payload: {payload}")
 
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()

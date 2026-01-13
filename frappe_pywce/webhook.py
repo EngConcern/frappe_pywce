@@ -508,72 +508,88 @@ def _send_template_response(phone_number, template):
         template_type = template.get('type', 'text')
         message_data = template.get('message', {})
         
-        # Import the API functions
-        from frappe_pywce.api.whatsapp_api import (
-            send_text_message, send_button_message, send_list_message,
-            send_flow_message, send_media_message, send_location_message,
-            send_contact_message, send_template_message
-        )
-        
         response = None
         
         if template_type == 'text':
             message_text = message_data.get('body', '') if isinstance(message_data, dict) else str(message_data)
-            response = send_text_message(phone_number, message_text)
+            send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_text_message')
+            response = send_func(phone_number, message_text)
             
         elif template_type == 'button':
             message_text = message_data.get('body', '')
             buttons_data = message_data.get('buttons', [])
             
-            # Format buttons for the API
+            # Format buttons for the API - handle both string arrays and object arrays
             buttons = []
-            for i, btn_text in enumerate(buttons_data):
-                buttons.append({
-                    "id": f"btn_{i}",
-                    "title": btn_text
-                })
+            for i, btn in enumerate(buttons_data[:3]):  # WhatsApp allows max 3 buttons
+                if isinstance(btn, str):
+                    # Handle string format from chatbot config
+                    buttons.append({
+                        "id": f"btn_{i}",
+                        "title": btn
+                    })
+                elif isinstance(btn, dict):
+                    # Handle object format
+                    buttons.append({
+                        "id": btn.get("id", f"btn_{i}"),
+                        "title": btn.get("title", f"Button {i+1}")
+                    })
+                else:
+                    # Fallback
+                    buttons.append({
+                        "id": f"btn_{i}",
+                        "title": str(btn)
+                    })
             
-            response = send_button_message(phone_number, message_text, buttons)
+            send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_button_message')
+            response = send_func(phone_number, message_text, buttons)
             
         elif template_type == 'list':
             # List template handling would go here
             message_text = message_data.get('body', '')
             list_title = message_data.get('title', 'Select Option')
             sections = message_data.get('sections', [])
-            response = send_list_message(phone_number, message_text, list_title, sections)
+            send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_list_message')
+            response = send_func(phone_number, message_text, list_title, sections)
             
         elif template_type == 'flow':
             flow_token = message_data.get('flow_token', '')
             flow_data = message_data.get('flow_data', {})
-            response = send_flow_message(phone_number, flow_token, flow_data)
+            send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_flow_message')
+            response = send_func(phone_number, flow_token, flow_data)
             
         elif template_type == 'media':
             media_type = message_data.get('media_type', 'image')
             media_url = message_data.get('media_url', '')
             caption = message_data.get('caption', '')
-            response = send_media_message(phone_number, media_type, media_url, caption)
+            send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_media_message')
+            response = send_func(phone_number, media_type, media_url, caption)
             
         elif template_type == 'location':
             latitude = message_data.get('latitude', 0)
             longitude = message_data.get('longitude', 0)
             name = message_data.get('name', '')
             address = message_data.get('address', '')
-            response = send_location_message(phone_number, latitude, longitude, name, address)
+            send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_location_message')
+            response = send_func(phone_number, latitude, longitude, name, address)
             
         elif template_type == 'contacts':
             contact_data = message_data.get('contact_data', {})
-            response = send_contact_message(phone_number, contact_data)
+            send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_contact_message')
+            response = send_func(phone_number, contact_data)
             
         elif template_type == 'template':
             template_name = message_data.get('template_name', '')
             language_code = message_data.get('language_code', 'en')
             components = message_data.get('components', [])
-            response = send_template_message(phone_number, template_name, language_code, components)
+            send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_template_message')
+            response = send_func(phone_number, template_name, language_code, components)
             
         else:
             # Default to text message
             message_text = message_data.get('body', '') if isinstance(message_data, dict) else str(message_data)
-            response = send_text_message(phone_number, message_text)
+            send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_text_message')
+            response = send_func(phone_number, message_text)
         
         # Update the message record with template info
         if response and response.get('success'):
