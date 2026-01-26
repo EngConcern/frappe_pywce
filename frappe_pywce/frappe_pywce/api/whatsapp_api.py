@@ -229,13 +229,15 @@ def send_text_message(phone_number, message_text):
     return send_message(phone_number, message_text, "text")
 
 @frappe.whitelist()
-def send_button_message(phone_number, message_text, buttons):
+def send_button_message(phone_number, message_text, buttons, header_text=None, footer_text=None):
     """Send a button message with interactive buttons
     
     Args:
         phone_number (str): Recipient phone number
         message_text (str): Message body text
         buttons (list): List of button objects with 'id' and 'title' keys
+        header_text (str): Optional header text
+        footer_text (str): Optional footer text
     """
     try:
         config = frappe.get_single("ChatBot Config")
@@ -290,16 +292,26 @@ def send_button_message(phone_number, message_text, buttons):
                 }
             })
 
+        interactive = {
+            "type": "button",
+            "body": {"text": message_text},
+            "action": {"buttons": button_rows}
+        }
+        
+        # Add optional header
+        if header_text:
+            interactive["header"] = {"type": "text", "text": header_text}
+        
+        # Add optional footer
+        if footer_text:
+            interactive["footer"] = {"text": footer_text}
+
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": clean_phone,
             "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "body": {"text": message_text},
-                "action": {"buttons": button_rows}
-            }
+            "interactive": interactive
         }
 
         # Debug logging
@@ -318,14 +330,16 @@ def send_button_message(phone_number, message_text, buttons):
         frappe.throw(_("Failed to send button message: {0}").format(str(e)))
 
 @frappe.whitelist()
-def send_list_message(phone_number, message_text, list_title, sections):
+def send_list_message(phone_number, message_text, list_title, sections, header_text=None, footer_text=None):
     """Send a list message with selectable options
     
     Args:
         phone_number (str): Recipient phone number
         message_text (str): Message body text
-        list_title (str): Title for the list
+        list_title (str): Title for the list button
         sections (list): List of section objects with 'title' and 'rows' (each row has 'id' and 'title')
+        header_text (str): Optional header text
+        footer_text (str): Optional footer text
     """
     try:
         config = frappe.get_single("ChatBot Config")
@@ -343,10 +357,12 @@ def send_list_message(phone_number, message_text, list_title, sections):
         for section in sections[:10]:  # WhatsApp allows max 10 sections
             rows = []
             for row in section.get("rows", [])[:10]:  # Max 10 rows per section
+                # Handle both 'desc' and 'description' field names from flow JSON
+                description = row.get("description", "") or row.get("desc", "")
                 rows.append({
                     "id": row.get("id", ""),
                     "title": row.get("title", ""),
-                    "description": row.get("description", "")
+                    "description": description
                 })
             
             formatted_sections.append({
@@ -354,19 +370,29 @@ def send_list_message(phone_number, message_text, list_title, sections):
                 "rows": rows
             })
 
+        interactive = {
+            "type": "list",
+            "body": {"text": message_text},
+            "action": {
+                "button": list_title,
+                "sections": formatted_sections
+            }
+        }
+        
+        # Add optional header
+        if header_text:
+            interactive["header"] = {"type": "text", "text": header_text}
+        
+        # Add optional footer
+        if footer_text:
+            interactive["footer"] = {"text": footer_text}
+
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": phone_number,
             "type": "interactive",
-            "interactive": {
-                "type": "list",
-                "body": {"text": message_text},
-                "action": {
-                    "button": list_title,
-                    "sections": formatted_sections
-                }
-            }
+            "interactive": interactive
         }
 
         response = requests.post(url, headers=headers, json=payload)

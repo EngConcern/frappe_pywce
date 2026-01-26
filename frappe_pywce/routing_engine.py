@@ -353,6 +353,8 @@ class TemplateSender:
         """Send a button message"""
         body_text = message_data.get('body', '')
         buttons_data = message_data.get('buttons', [])
+        header_text = message_data.get('title', None)
+        footer_text = message_data.get('footer', None)
         
         # Format buttons - handle both string arrays and object arrays
         buttons = []
@@ -368,16 +370,18 @@ class TemplateSender:
                 buttons.append({"id": f"btn_{i}", "title": str(btn)})
         
         send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_button_message')
-        return send_func(self.phone_number, body_text, buttons)
+        return send_func(self.phone_number, body_text, buttons, header_text, footer_text)
     
     def _send_list(self, message_data: Dict) -> Optional[Dict]:
         """Send a list message"""
         body_text = message_data.get('body', '')
-        button_text = message_data.get('button', 'Select')
+        button_text = message_data.get('button', 'Select')  # This is list_title parameter
         sections = message_data.get('sections', [])
+        header_text = message_data.get('title', None)
+        footer_text = message_data.get('footer', None)
         
         send_func = frappe.get_attr('frappe_pywce.frappe_pywce.api.whatsapp_api.send_list_message')
-        return send_func(self.phone_number, body_text, button_text, sections)
+        return send_func(self.phone_number, body_text, button_text, sections, header_text, footer_text)
     
     def _send_cta(self, message_data: Dict) -> Optional[Dict]:
         """Send a CTA URL button message"""
