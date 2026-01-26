@@ -12,6 +12,7 @@ import os
 from frappe_pywce.config import get_engine_config, get_wa_config
 from frappe_pywce.util import CACHE_KEY_PREFIX, LOCK_WAIT_TIME, LOCK_LEASE_TIME, bot_settings, create_cache_key
 from frappe_pywce.pywce_logger import app_logger as logger
+from frappe_pywce.routing_engine import RoutingEngine
 
 
 def _verifier():
@@ -594,14 +595,18 @@ def _send_template_response(phone_number, template):
         # Update the message record with template info
         if response and response.get('success'):
             settings = template.get('settings', {})
+            template_id = template.get('id', '')
+            template_name = template.get('name', '')
             message_level = settings.get('message_level', '')
             next_level = settings.get('next_level', '')
             
-            # Update the last sent message with level info
+            # Update the last sent message with template and level info
             frappe.db.set_value(
                 'WhatsApp Chat Message',
                 {'message_id': response.get('message_id')},
                 {
+                    'template_id': template_id,
+                    'template_name': template_name,
                     'message_level': message_level,
                     'next_level': next_level
                 }
@@ -617,7 +622,7 @@ def _send_template_response(phone_number, template):
 
 
 def _process_chatbot_message(phone_number, message_text):
-    """Process incoming message through chatbot logic"""
+    """Process incoming message through chatbot logic using the RoutingEngine"""
     try:
         # Load chatbot configuration
         config_data = _load_chatbot_config()
@@ -631,12 +636,9 @@ def _process_chatbot_message(phone_number, message_text):
             logger.warning("No active chatbot found")
             return
         
-        # First, try to find template by route matching
-        template = _find_template_by_route(chatbot, message_text)
-        
-        # If no route match, try level-based matching
-        if not template:
-            template = _find_template_by_level(chatbot, phone_number)
+        # Use the new RoutingEngine to find the appropriate template
+        engine = RoutingEngine(chatbot)
+        template = engine.find_response_template(phone_number, message_text)
         
         # If template found, send the response
         if template:

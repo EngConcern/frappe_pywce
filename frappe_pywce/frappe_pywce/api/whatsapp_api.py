@@ -303,7 +303,6 @@ def send_button_message(phone_number, message_text, buttons):
         }
 
         # Debug logging
-        import frappe
         frappe.logger().info(f"Button message payload: {payload}")
 
         response = requests.post(url, headers=headers, json=payload)

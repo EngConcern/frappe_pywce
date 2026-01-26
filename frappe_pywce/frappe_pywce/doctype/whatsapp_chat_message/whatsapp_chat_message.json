@@ -22,6 +22,8 @@
   "contact_name",
   "column_break_5",
   "error_message",  "section_break_6",
+  "template_id",
+  "template_name",
   "message_level",
   "next_level",
   "delay_time",  "metadata"
@@ -118,6 +120,16 @@
   {
    "fieldname": "section_break_6",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "template_id",
+   "fieldtype": "Data",
+   "label": "Template ID"
+  },
+  {
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "label": "Template Name"
   },
   {
    "fieldname": "message_level",
