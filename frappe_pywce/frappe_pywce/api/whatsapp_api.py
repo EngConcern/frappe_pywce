@@ -229,15 +229,13 @@ def send_text_message(phone_number, message_text):
     return send_message(phone_number, message_text, "text")
 
 @frappe.whitelist()
-def send_button_message(phone_number, message_text, buttons, header_text=None, footer_text=None):
+def send_button_message(phone_number, message_text, buttons):
     """Send a button message with interactive buttons
     
     Args:
         phone_number (str): Recipient phone number
         message_text (str): Message body text
         buttons (list): List of button objects with 'id' and 'title' keys
-        header_text (str): Optional header text
-        footer_text (str): Optional footer text
     """
     try:
         config = frappe.get_single("ChatBot Config")
@@ -292,26 +290,16 @@ def send_button_message(phone_number, message_text, buttons, header_text=None, f
                 }
             })
 
-        interactive = {
-            "type": "button",
-            "body": {"text": message_text},
-            "action": {"buttons": button_rows}
-        }
-        
-        # Add optional header
-        if header_text:
-            interactive["header"] = {"type": "text", "text": header_text}
-        
-        # Add optional footer
-        if footer_text:
-            interactive["footer"] = {"text": footer_text}
-
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": clean_phone,
             "type": "interactive",
-            "interactive": interactive
+            "interactive": {
+                "type": "button",
+                "body": {"text": message_text},
+                "action": {"buttons": button_rows}
+            }
         }
 
         # Debug logging
@@ -330,16 +318,14 @@ def send_button_message(phone_number, message_text, buttons, header_text=None, f
         frappe.throw(_("Failed to send button message: {0}").format(str(e)))
 
 @frappe.whitelist()
-def send_list_message(phone_number, message_text, list_title, sections, header_text=None, footer_text=None):
+def send_list_message(phone_number, message_text, list_title, sections):
     """Send a list message with selectable options
     
     Args:
         phone_number (str): Recipient phone number
         message_text (str): Message body text
-        list_title (str): Title for the list button
+        list_title (str): Title for the list
         sections (list): List of section objects with 'title' and 'rows' (each row has 'id' and 'title')
-        header_text (str): Optional header text
-        footer_text (str): Optional footer text
     """
     try:
         config = frappe.get_single("ChatBot Config")
@@ -357,12 +343,10 @@ def send_list_message(phone_number, message_text, list_title, sections, header_t
         for section in sections[:10]:  # WhatsApp allows max 10 sections
             rows = []
             for row in section.get("rows", [])[:10]:  # Max 10 rows per section
-                # Handle both 'desc' and 'description' field names from flow JSON
-                description = row.get("description", "") or row.get("desc", "")
                 rows.append({
                     "id": row.get("id", ""),
                     "title": row.get("title", ""),
-                    "description": description
+                    "description": row.get("description", "")
                 })
             
             formatted_sections.append({
@@ -370,29 +354,19 @@ def send_list_message(phone_number, message_text, list_title, sections, header_t
                 "rows": rows
             })
 
-        interactive = {
-            "type": "list",
-            "body": {"text": message_text},
-            "action": {
-                "button": list_title,
-                "sections": formatted_sections
-            }
-        }
-        
-        # Add optional header
-        if header_text:
-            interactive["header"] = {"type": "text", "text": header_text}
-        
-        # Add optional footer
-        if footer_text:
-            interactive["footer"] = {"text": footer_text}
-
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": phone_number,
             "type": "interactive",
-            "interactive": interactive
+            "interactive": {
+                "type": "list",
+                "body": {"text": message_text},
+                "action": {
+                    "button": list_title,
+                    "sections": formatted_sections
+                }
+            }
         }
 
         response = requests.post(url, headers=headers, json=payload)
@@ -621,78 +595,6 @@ def request_location_message(phone_number, message_text):
     except Exception as e:
         frappe.log_error(f"Error sending location request message: {str(e)}")
         frappe.throw(_("Failed to send location request message: {0}").format(str(e)))
-
-@frappe.whitelist()
-def send_cta_url_message(phone_number, body_text, button_text, url, header_text=None, footer_text=None):
-    """Send a CTA (Call-to-Action) URL button message
-    
-    Args:
-        phone_number (str): Recipient phone number
-        body_text (str): Message body text
-        button_text (str): Text displayed on the button
-        url (str): URL to open when button is clicked
-        header_text (str): Optional header text
-        footer_text (str): Optional footer text
-    """
-    try:
-        config = frappe.get_single("ChatBot Config")
-        if not config.access_token or not config.phone_id:
-            frappe.throw(_("ChatBot Config not properly configured"))
-
-        # Validate and format phone number
-        clean_phone = ''.join(filter(str.isdigit, str(phone_number)))
-        if len(clean_phone) < 10:
-            frappe.throw(_("Invalid phone number format"))
-        if len(clean_phone) == 10:
-            clean_phone = f"27{clean_phone}"
-
-        url_endpoint = f"https://graph.facebook.com/v18.0/{config.phone_id}/messages"
-        headers = {
-            "Authorization": f"Bearer {config.access_token}",
-            "Content-Type": "application/json"
-        }
-
-        # Build interactive message with CTA URL button
-        interactive = {
-            "type": "cta_url",
-            "body": {"text": body_text},
-            "action": {
-                "name": "cta_url",
-                "parameters": {
-                    "display_text": button_text[:20] if button_text else "Open",
-                    "url": url
-                }
-            }
-        }
-
-        # Add optional header
-        if header_text:
-            interactive["header"] = {"type": "text", "text": header_text}
-        
-        # Add optional footer
-        if footer_text:
-            interactive["footer"] = {"text": footer_text}
-
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": clean_phone,
-            "type": "interactive",
-            "interactive": interactive
-        }
-
-        response = requests.post(url_endpoint, headers=headers, json=payload)
-        response.raise_for_status()
-
-        result = response.json()
-        message_id = result.get("messages", [{}])[0].get("id")
-
-        return {"success": True, "message_id": message_id}
-
-    except Exception as e:
-        frappe.log_error(f"Error sending CTA URL message: {str(e)}")
-        frappe.throw(_("Failed to send CTA URL message: {0}").format(str(e)))
-
 
 @frappe.whitelist()
 def send_template_message(phone_number, template_name, language_code="en", components=None):

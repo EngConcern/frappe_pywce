@@ -1,0 +1,142 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:UBS-{phone_number}-{#####}",
+ "creation": "2026-02-25 20:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "session_section",
+  "phone_number",
+  "current_bot",
+  "column_break_1",
+  "current_level",
+  "current_template",
+  "state_section",
+  "is_active",
+  "last_activity",
+  "column_break_2",
+  "session_start",
+  "message_count",
+  "data_section",
+  "session_data",
+  "context_data"
+ ],
+ "fields": [
+  {
+   "fieldname": "session_section",
+   "fieldtype": "Section Break",
+   "label": "Session Details"
+  },
+  {
+   "fieldname": "phone_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Phone Number",
+   "reqd": 1
+  },
+  {
+   "fieldname": "current_bot",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Current Bot",
+   "options": "Chat Bot"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Format: {bot_slug}::{level_name}",
+   "fieldname": "current_level",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Current Level"
+  },
+  {
+   "fieldname": "current_template",
+   "fieldtype": "Link",
+   "label": "Current Template",
+   "options": "Bot Template"
+  },
+  {
+   "fieldname": "state_section",
+   "fieldtype": "Section Break",
+   "label": "Session State"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "last_activity",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Activity"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "session_start",
+   "fieldtype": "Datetime",
+   "label": "Session Start"
+  },
+  {
+   "default": "0",
+   "fieldname": "message_count",
+   "fieldtype": "Int",
+   "label": "Message Count"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "data_section",
+   "fieldtype": "Section Break",
+   "label": "Session Data"
+  },
+  {
+   "description": "User variables and collected data",
+   "fieldname": "session_data",
+   "fieldtype": "JSON",
+   "label": "Session Data"
+  },
+  {
+   "description": "Additional context for conversation",
+   "fieldname": "context_data",
+   "fieldtype": "JSON",
+   "label": "Context Data"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-02-25 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Pywce",
+ "name": "User Bot Session",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -13,6 +13,7 @@ from frappe_pywce.config import get_engine_config, get_wa_config
 from frappe_pywce.util import CACHE_KEY_PREFIX, LOCK_WAIT_TIME, LOCK_LEASE_TIME, bot_settings, create_cache_key
 from frappe_pywce.pywce_logger import app_logger as logger
 from frappe_pywce.routing_engine import RoutingEngine, send_matched_template
+from frappe_pywce.multi_bot_engine import MultiBotEngine, process_multi_bot_message
 
 
 def _verifier():
@@ -652,6 +653,40 @@ def _process_chatbot_message(phone_number, message_text):
         frappe.log_error(title="Chatbot Processing Error", message=str(e))
 
 
+def _process_multi_bot_message(phone_number: str, message_text: str):
+    """
+    Process incoming message using MultiBotEngine for multi-bot support.
+    
+    This function routes messages to the appropriate bot based on:
+    1. Active user session (if exists)
+    2. Trigger pattern matching
+    3. Default bot fallback
+    """
+    try:
+        logger.info(f"Processing multi-bot message from {phone_number}: {message_text[:50]}...")
+        
+        # Use the MultiBotEngine
+        response = process_multi_bot_message(phone_number, message_text)
+        
+        if response:
+            if response.get("success"):
+                logger.info(f"Multi-bot response sent successfully to {phone_number}")
+            else:
+                logger.warning(f"Multi-bot response failed: {response.get('error')}")
+        else:
+            logger.warning(f"No multi-bot response for {phone_number}")
+            
+    except Exception as e:
+        logger.error(f"Error in multi-bot processing: {str(e)}")
+        frappe.log_error(title="Multi-Bot Processing Error", message=str(e))
+
+
+def _is_multi_bot_enabled() -> bool:
+    """Check if multi-bot mode is enabled"""
+    # Check if there are any Chat Bot records
+    return frappe.db.count("Chat Bot", {"is_active": 1}) > 0
+
+
 def _internal_webhook_handler(wa_id: str, payload: dict):
     """Process webhook data internally
 
@@ -672,14 +707,81 @@ def _internal_webhook_handler(wa_id: str, payload: dict):
             # Process message templates
             _process_message_templates(payload)
             
-            # Process with existing engine
-            get_engine_config().process_webhook(payload)
+            # Check if multi-bot mode is enabled
+            if _is_multi_bot_enabled():
+                # Use MultiBotEngine for processing
+                _process_multi_bot_webhook(wa_id, payload)
+            else:
+                # Process with existing single-bot engine
+                get_engine_config().process_webhook(payload)
 
     except redis.exceptions.LockError:
         logger.critical("FIFO Enforcement: Dropped concurrent message for %s due to lock error.", wa_id)
 
     except Exception:
         frappe.log_error(title="Chatbot Webhook E.Handler")
+
+
+def _process_multi_bot_webhook(wa_id: str, payload: dict):
+    """
+    Process webhook payload using MultiBotEngine.
+    
+    Extracts message content and routes to appropriate bot.
+    """
+    try:
+        # Extract messages from payload
+        if not payload.get('entry'):
+            return
+        
+        for entry in payload.get('entry', []):
+            for change in entry.get('changes', []):
+                value = change.get('value', {})
+                messages = value.get('messages', [])
+                
+                for message in messages:
+                    # Normalize phone number
+                    raw_phone = message.get('from', '')
+                    phone_number = ''.join(filter(str.isdigit, raw_phone))
+                    
+                    # Extract message text based on type
+                    message_type = message.get('type', 'text')
+                    message_text = _extract_message_text_from_payload(message, message_type)
+                    
+                    if phone_number and message_text:
+                        _process_multi_bot_message(phone_number, message_text)
+    
+    except Exception as e:
+        logger.error(f"Error in multi-bot webhook processing: {str(e)}")
+        frappe.log_error(title="Multi-Bot Webhook Error", message=str(e))
+
+
+def _extract_message_text_from_payload(message: dict, message_type: str) -> str:
+    """Extract message text from webhook payload based on message type"""
+    if message_type == 'text':
+        return message.get('text', {}).get('body', '')
+    
+    elif message_type == 'interactive':
+        interactive = message.get('interactive', {})
+        interactive_type = interactive.get('type', '')
+        
+        if interactive_type == 'button_reply':
+            return interactive.get('button_reply', {}).get('id', '')
+        elif interactive_type == 'list_reply':
+            return interactive.get('list_reply', {}).get('id', '')
+        elif interactive_type == 'nfm_reply':
+            return interactive.get('nfm_reply', {}).get('response_json', '')
+    
+    elif message_type == 'button':
+        return message.get('button', {}).get('payload', '')
+    
+    elif message_type == 'location':
+        location = message.get('location', {})
+        return f"location:{location.get('latitude')},{location.get('longitude')}"
+    
+    elif message_type in ['image', 'video', 'audio', 'document']:
+        return f"[{message_type}]"
+    
+    return ''
 
 
 def _on_job_success(*args, **kwargs):

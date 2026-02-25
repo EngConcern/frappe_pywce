@@ -1,0 +1,156 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:route_id",
+ "creation": "2026-02-25 20:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "route_section",
+  "route_id",
+  "bot",
+  "column_break_1",
+  "priority",
+  "connection_section",
+  "from_template",
+  "from_level",
+  "column_break_2",
+  "to_template",
+  "to_level",
+  "pattern_section",
+  "pattern",
+  "is_regex",
+  "column_break_3",
+  "is_fallback"
+ ],
+ "fields": [
+  {
+   "fieldname": "route_section",
+   "fieldtype": "Section Break",
+   "label": "Route Details"
+  },
+  {
+   "fieldname": "route_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Route ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "bot",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Bot",
+   "options": "Chat Bot",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Higher priority routes are checked first",
+   "fieldname": "priority",
+   "fieldtype": "Int",
+   "label": "Priority"
+  },
+  {
+   "fieldname": "connection_section",
+   "fieldtype": "Section Break",
+   "label": "Connection"
+  },
+  {
+   "fieldname": "from_template",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "From Template",
+   "options": "Bot Template",
+   "reqd": 1
+  },
+  {
+   "description": "Level ID of source template (auto-populated)",
+   "fieldname": "from_level",
+   "fieldtype": "Data",
+   "label": "From Level",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "to_template",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "To Template",
+   "options": "Bot Template",
+   "reqd": 1
+  },
+  {
+   "description": "Level ID of target template (auto-populated)",
+   "fieldname": "to_level",
+   "fieldtype": "Data",
+   "label": "To Level",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pattern_section",
+   "fieldtype": "Section Break",
+   "label": "Pattern Matching"
+  },
+  {
+   "description": "Input pattern to match. Can be exact text or regex.",
+   "fieldname": "pattern",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pattern",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_regex",
+   "fieldtype": "Check",
+   "label": "Is Regex Pattern"
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Use this route when no other route matches",
+   "fieldname": "is_fallback",
+   "fieldtype": "Check",
+   "label": "Is Fallback Route"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-02-25 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Pywce",
+ "name": "Bot Route",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

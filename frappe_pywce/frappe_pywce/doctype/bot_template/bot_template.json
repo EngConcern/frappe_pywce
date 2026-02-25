@@ -1,0 +1,179 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:template_id",
+ "creation": "2026-02-25 20:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "template_section",
+  "template_id",
+  "bot",
+  "template_name",
+  "column_break_1",
+  "template_type",
+  "is_start",
+  "level_section",
+  "level_id",
+  "next_level",
+  "column_break_2",
+  "trigger_pattern",
+  "message_section",
+  "message_data",
+  "settings_section",
+  "settings",
+  "position_section",
+  "position_x",
+  "position_y"
+ ],
+ "fields": [
+  {
+   "fieldname": "template_section",
+   "fieldtype": "Section Break",
+   "label": "Template Details"
+  },
+  {
+   "description": "Format: {bot_slug}_{template_name}_{random}",
+   "fieldname": "template_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Template ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "bot",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Bot",
+   "options": "Chat Bot",
+   "reqd": 1
+  },
+  {
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Template Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "template_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Template Type",
+   "options": "text\nbutton\nlist\ncta\nrequest-location\nmedia\nlocation\ncontacts\nflow\ntemplate",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_start",
+   "fieldtype": "Check",
+   "label": "Is Start Template"
+  },
+  {
+   "fieldname": "level_section",
+   "fieldtype": "Section Break",
+   "label": "Level Configuration"
+  },
+  {
+   "description": "Format: {bot_slug}::{level_name}. Unique identifier for this conversation state.",
+   "fieldname": "level_id",
+   "fieldtype": "Data",
+   "label": "Level ID",
+   "unique": 1
+  },
+  {
+   "description": "The level to transition to after this template is sent",
+   "fieldname": "next_level",
+   "fieldtype": "Data",
+   "label": "Next Level"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Regex pattern to match input for entry to this template",
+   "fieldname": "trigger_pattern",
+   "fieldtype": "Data",
+   "label": "Trigger Pattern"
+  },
+  {
+   "fieldname": "message_section",
+   "fieldtype": "Section Break",
+   "label": "Message Content"
+  },
+  {
+   "description": "JSON object containing message body, buttons, sections, url, etc.",
+   "fieldname": "message_data",
+   "fieldtype": "JSON",
+   "label": "Message Data"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "settings_section",
+   "fieldtype": "Section Break",
+   "label": "Settings"
+  },
+  {
+   "description": "JSON object with delay_time, typing, ack, checkpoint, etc.",
+   "fieldname": "settings",
+   "fieldtype": "JSON",
+   "label": "Settings"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "position_section",
+   "fieldtype": "Section Break",
+   "label": "Visual Builder Position"
+  },
+  {
+   "default": "0",
+   "fieldname": "position_x",
+   "fieldtype": "Float",
+   "label": "Position X"
+  },
+  {
+   "default": "0",
+   "fieldname": "position_y",
+   "fieldtype": "Float",
+   "label": "Position Y"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [
+  {
+   "link_doctype": "Bot Route",
+   "link_fieldname": "from_template"
+  }
+ ],
+ "modified": "2026-02-25 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Pywce",
+ "name": "Bot Template",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
