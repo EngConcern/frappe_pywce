@@ -682,9 +682,18 @@ def _process_multi_bot_message(phone_number: str, message_text: str):
 
 
 def _is_multi_bot_enabled() -> bool:
-    """Check if multi-bot mode is enabled"""
-    # Check if there are any Chat Bot records
-    return frappe.db.count("Chat Bot", {"is_active": 1}) > 0
+    """Check if multi-bot mode is enabled by checking for chatbots array in flow_json"""
+    try:
+        flow_json = frappe.db.get_single_value("ChatBot Config", "flow_json")
+        if flow_json:
+            import json
+            flow_data = json.loads(flow_json) if isinstance(flow_json, str) else flow_json
+            # Multi-bot mode if chatbots array exists with more than 1 bot
+            chatbots = flow_data.get("chatbots", [])
+            return len(chatbots) > 1
+    except:
+        pass
+    return False
 
 
 def _internal_webhook_handler(wa_id: str, payload: dict):
